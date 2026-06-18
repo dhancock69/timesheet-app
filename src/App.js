@@ -121,7 +121,15 @@ function Select({value,onChange,children,style={}}) {
 
 // ── Background canvas with watermark ─────────────────────────────────────────
 function BeardCanvas() {
-  const phrases = ["BeardONE","1% better every day","BeardONE","1% better every day","BeardONE","1% better every day"];
+  const rows = [
+    // Each row: [text, verticalOffset, color, size]
+    ['BEARD "ONE"', 0,  "rgba(220,80,60,0.20)",  12],
+    ['1% BETTER EVERY DAY', 8, "rgba(240,220,210,0.13)", 10],
+    ['BEARD "ONE"', -6, "rgba(220,80,60,0.16)",  10],
+    ['1% BETTER EVERY DAY', 4, "rgba(240,220,210,0.10)", 11],
+    ['BEARD "ONE"', 10, "rgba(220,80,60,0.18)",  11],
+    ['1% BETTER EVERY DAY', -4,"rgba(240,220,210,0.12)", 10],
+  ];
   return (
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
       {/* BIM image watermark */}
@@ -130,13 +138,21 @@ function BeardCanvas() {
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
-      {/* Dotted text watermark */}
+      {/* Staggered dotted text watermark */}
       <div style={{position:"absolute",inset:0,display:"flex",flexWrap:"wrap",alignContent:"flex-start",padding:40,gap:0}}>
-        {Array.from({length:120}).map((_,i)=>(
-          <span key={i} style={{color:i%2===0?"rgba(220,80,60,0.18)":"rgba(240,220,210,0.11)",fontSize:i%3===0?12:10,fontWeight:900,letterSpacing:2,textTransform:"uppercase",padding:"18px 28px",whiteSpace:"nowrap"}}>
-            {phrases[i%phrases.length]}
-          </span>
-        ))}
+        {Array.from({length:120}).map((_,i)=>{
+          const [text, vOffset, color, size] = rows[i % rows.length];
+          return (
+            <span key={i} style={{
+              color, fontSize:size, fontWeight:900, letterSpacing:2,
+              textTransform:"uppercase", whiteSpace:"nowrap",
+              padding:"16px 24px",
+              position:"relative", top: vOffset,
+            }}>
+              {text}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -743,9 +759,9 @@ export default function App() {
               <span style={{fontWeight:900,fontSize:16,color:C.white,letterSpacing:1}}>B</span>
             </div>
             <div>
-              <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:6}}>
                 <span style={{fontWeight:900,fontSize:17,color:C.white,letterSpacing:2,textTransform:"uppercase"}}>BEARD</span>
-                <span style={{fontWeight:900,fontSize:13,color:C.accent,letterSpacing:3,textTransform:"uppercase"}}>ONE</span>
+                <span style={{fontWeight:900,fontSize:17,color:C.accent,letterSpacing:2,textTransform:"uppercase"}}>"ONE"</span>
               </div>
               <div style={{color:C.muted,fontSize:10,letterSpacing:2,textTransform:"uppercase",marginTop:-1}}>1% better every day</div>
             </div>
