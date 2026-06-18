@@ -174,20 +174,22 @@ function BeardCanvas() {
     }
   }
 
-  const imgStyle = {
+  const imgBase = {
     position:"absolute", inset:0, backgroundSize:"cover", backgroundPosition:"center",
-    filter:"grayscale(60%) sepia(30%)",
+    filter:"grayscale(60%) sepia(30%)", transition:`opacity ${FADE_DURATION}ms ease-in-out`,
   };
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-      {/* Current image */}
-      <div style={{...imgStyle, backgroundImage:`url('${BIM_IMAGES[current]}')`, opacity:.18, transition:"none"}}/>
-      {/* Next image fading in */}
-      {next !== null && (
-        <div style={{...imgStyle, backgroundImage:`url('${BIM_IMAGES[next]}')`, opacity: fading ? .18 : 0,
-          transition:`opacity ${FADE_DURATION}ms ease-in-out`}}/>
-      )}
+      {/* Render all images stacked, only current and next are visible */}
+      {BIM_IMAGES.map((src, idx) => {
+        const isCurrent = idx === current;
+        const isNext    = idx === next;
+        const opacity   = isCurrent ? (fading ? 0 : 0.18) : isNext ? (fading ? 0.18 : 0) : 0;
+        return (
+          <div key={src} style={{...imgBase, backgroundImage:`url('${src}')`, opacity}}/>
+        );
+      })}
       {/* Subtle red overlay */}
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
