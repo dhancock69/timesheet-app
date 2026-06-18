@@ -152,21 +152,17 @@ function BeardCanvas() {
     return () => clearInterval(interval);
   }, [current]);
 
-  // True checkerboard — (row+col) % 2 determines BEARD vs 1%
-  // Each cell is evenly spaced, text stays horizontal, no stacking
-  const COLS = 5;
-  const ROWS = 12;
+  // True checkerboard — evenly spaced, no nudge, full canvas coverage
+  const COLS = 6;
+  const ROWS = 14;
   const cellW = 100 / COLS;
   const cellH = 100 / ROWS;
   const items = [];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const isBeard = (r + c) % 2 === 0;
-      // Center each item in its cell, add small per-cell nudge for organic feel
-      const nudgeX = ((r * 3 + c * 7) % 11) - 5;
-      const nudgeY = ((r * 7 + c * 3) % 9)  - 4;
-      const leftPct = c * cellW + cellW * 0.5 + nudgeX * 0.4;
-      const topPct  = r * cellH + cellH * 0.5 + nudgeY * 0.5;
+      const leftPct = c * cellW + cellW * 0.5;
+      const topPct  = r * cellH + cellH * 0.5;
       const depth   = (r + c) % 3;
       const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.08,0.11][depth];
       const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
