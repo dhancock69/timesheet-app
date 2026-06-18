@@ -152,7 +152,7 @@ function BeardCanvas() {
     return () => clearInterval(interval);
   }, [current]);
 
-  // True checkerboard — evenly spaced, no nudge, full canvas coverage
+  // Checkerboard with seeded pseudo-random offset per cell — breaks rigidity, maintains coverage
   const COLS = 6;
   const ROWS = 14;
   const cellW = 100 / COLS;
@@ -161,8 +161,12 @@ function BeardCanvas() {
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const isBeard = (r + c) % 2 === 0;
-      const leftPct = c * cellW + cellW * 0.5;
-      const topPct  = r * cellH + cellH * 0.5;
+      // Seeded pseudo-random nudge — deterministic so it never shifts on re-render
+      const seed  = r * 31 + c * 17;
+      const nudgeX = ((seed * 13 + 7)  % 21) - 10; // -10 to +10
+      const nudgeY = ((seed * 19 + 11) % 17) - 8;  // -8  to +8
+      const leftPct = c * cellW + cellW * 0.5 + nudgeX * 0.35;
+      const topPct  = r * cellH + cellH * 0.5 + nudgeY * 0.35;
       const depth   = (r + c) % 3;
       const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.08,0.11][depth];
       const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
@@ -819,7 +823,12 @@ export default function App() {
               <div style={{color:C.muted,fontSize:10,letterSpacing:2,textTransform:"uppercase",marginTop:-1}}>1% better every day</div>
             </div>
           </div>
-          <div style={{color:C.muted,fontSize:12,letterSpacing:1}}>Timesheet Platform</div>
+          {/* Center — VDC Department */}
+          <div style={{position:"absolute",left:"50%",transform:"translateX(-50%)",textAlign:"center"}}>
+            <div style={{fontWeight:900,fontSize:13,color:C.text,letterSpacing:3,textTransform:"uppercase"}}>VDC Department</div>
+            <div style={{color:C.accent,fontSize:9,letterSpacing:3,textTransform:"uppercase",marginTop:1}}>Timesheet Platform</div>
+          </div>
+          <div style={{color:C.muted,fontSize:12,letterSpacing:1,visibility:"hidden"}}>Timesheet Platform</div>
         </div>
       </div>
 
