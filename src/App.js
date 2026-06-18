@@ -152,26 +152,28 @@ function BeardCanvas() {
     return () => clearInterval(interval);
   }, [current]);
 
-  // Checkerboard with seeded pseudo-random offset per cell — breaks rigidity, maintains coverage
-  const COLS = 6;
-  const ROWS = 14;
-  const cellW = 100 / COLS;
-  const cellH = 100 / ROWS;
+  // Diagonal stripes — text alternates within each row AND between rows
   const items = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const isBeard = (r + c) % 2 === 0;
-      // Seeded pseudo-random nudge — deterministic so it never shifts on re-render
-      const seed  = r * 31 + c * 17;
-      const nudgeX = ((seed * 13 + 7)  % 21) - 10; // -10 to +10
-      const nudgeY = ((seed * 19 + 11) % 17) - 8;  // -8  to +8
-      const leftPct = c * cellW + cellW * 0.5 + nudgeX * 0.35;
-      const topPct  = r * cellH + cellH * 0.5 + nudgeY * 0.35;
-      const depth   = (r + c) % 3;
-      const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.08,0.11][depth];
+  const stripeSpacingY = 80;
+  const angleOffset    = 0.4;
+  const canvasW = 1600;
+  const canvasH = 1100;
+
+  let stripeIdx = 0;
+  for (let y = -100; y < canvasH + 100; y += stripeSpacingY) {
+    const rowIsBeardFirst = stripeIdx % 2 === 0;
+    const depth = stripeIdx % 3;
+    let itemIdx = 0;
+    for (let x = -200; x < canvasW + 200; x += 220) {
+      // Alternate within the row — each item flips from the previous
+      const isBeard = rowIsBeardFirst ? itemIdx % 2 === 0 : itemIdx % 2 !== 0;
+      const opacity = isBeard ? [0.22,0.15,0.19][depth] : [0.13,0.08,0.11][depth];
       const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
-      items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, leftPct, topPct, isBeard });
+      const px = x + (y * angleOffset);
+      items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, px, py: y, isBeard });
+      itemIdx++;
     }
+    stripeIdx++;
   }
 
   const imgBase = {
@@ -194,20 +196,20 @@ function BeardCanvas() {
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
-      {/* Checkerboard watermark — horizontal text, alternating H+V */}
+      {/* Diagonal stripe watermark */}
       <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
         {items.map((item,i)=>(
           <span key={i} style={{
             position:"absolute",
-            left:`${item.leftPct}%`,
-            top:`${item.topPct}%`,
-            transform:"translate(-50%, -50%)",
+            left: item.px,
+            top:  item.py,
             color: item.isBeard ? `rgba(220,80,60,${item.opacity})` : `rgba(240,220,210,${item.opacity})`,
             fontSize: item.size,
             fontWeight: 900,
             letterSpacing: 2,
             textTransform: "uppercase",
             whiteSpace: "nowrap",
+            userSelect: "none",
           }}>
             {item.text}
           </span>
