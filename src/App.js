@@ -1,84 +1,86 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabase";
 
-// ── Beard Brand Colors ────────────────────────────────────────────────────────
+// ── Beard Brand ───────────────────────────────────────────────────────────────
 const C = {
-  bg: "#1a1010", surface: "#241818", card: "#2e1e1e", border: "#3a2525",
-  accent: "#c0392b", accentDim: "#3d0f0a", accentHover: "#e74c3c",
-  green: "#2dd4a0", greenDim: "#0d3d2e",
-  amber: "#f5a623", amberDim: "#3d2800",
-  red: "#e74c3c", redDim: "#3d1010",
-  text: "#f0ece8", muted: "#8a7f7a", white: "#ffffff",
-  purple: "#a78bfa", purpleDim: "#2e1f5e",
-  gold: "#c9a84c", goldDim: "#3d2e10",
+  bg:"#1a1010",surface:"#241818",card:"#2e1e1e",border:"#3a2525",
+  accent:"#c0392b",accentDim:"#3d0f0a",accentHover:"#e74c3c",
+  green:"#2dd4a0",greenDim:"#0d3d2e",amber:"#f5a623",amberDim:"#3d2800",
+  red:"#e74c3c",redDim:"#3d1010",text:"#f0ece8",muted:"#8a7f7a",white:"#ffffff",
+  purple:"#a78bfa",purpleDim:"#2e1f5e",gold:"#c9a84c",goldDim:"#3d2e10",
 };
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-const WEEK_START = (() => {
-  const d = new Date(); const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff); d.setHours(0,0,0,0); return d;
-})();
+const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
 
-function weekLabel(start) {
-  const end = new Date(start); end.setDate(end.getDate() + 6);
-  const fmt = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
-  return `${fmt(start)} – ${fmt(end)}, ${end.getFullYear()}`;
+function weekStart() {
+  const d=new Date(); const day=d.getDay();
+  const diff=day===0?-6:1-day;
+  d.setDate(d.getDate()+diff); d.setHours(0,0,0,0); return d;
+}
+function weekLabel(s) {
+  const e=new Date(s); e.setDate(e.getDate()+6);
+  const f=d=>d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  return `${f(s)} – ${f(e)}, ${e.getFullYear()}`;
 }
 function dateOfDay(ws,i) { const d=new Date(ws); d.setDate(d.getDate()+i); return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
 function excelDate(ws,i) { const d=new Date(ws); d.setDate(d.getDate()+i); return d.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"}); }
 function uid() { return Math.random().toString(36).slice(2,9); }
-function todayWeekdayName() { return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()]; }
+function todayName() { return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()]; }
 function isWeekday() { const d=new Date().getDay(); return d>=1&&d<=5; }
-function parseTime(t) { const [h,m]=t.split(":").map(Number); return {h:isNaN(h)?0:h,m:isNaN(m)?0:m}; }
-function fmt12(t) { const {h,m}=parseTime(t); const ap=h>=12?"PM":"AM"; const hh=h%12||12; return `${hh}:${String(m).padStart(2,"0")} ${ap}`; }
+function fmt12(t) { const [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; const hh=h%12||12; return `${hh}:${String(m).padStart(2,"0")} ${ap}`; }
+function toDateStr(d) { return d.toISOString().slice(0,10); }
 
-const STORAGE_KEY = "tsp_v4";
-function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; } catch { return {}; } }
-function save(data) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(data)); } catch {} }
+const WS = weekStart();
+const WEEK_KEY = toDateStr(WS);
 
-const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
+// ── BIM Slideshow ─────────────────────────────────────────────────────────────
+const BIM_IMAGES=["/bim-bg.png","/bim-bg-2.png","/bim-bg-3.png","/bim-bg-4.png","/bim-bg-5.png","/bim-bg-6.png","/bim-bg-7.png"];
+const FADE_MS=2000, HOLD_MS=7000;
 
-const DEFAULT_PROJECTS = [
-  {id:"p1", projectNum:"10-11-6010", taskNum:"OH", expenseType:"", ocip:"", projectName:"Overhead"},
-  {id:"p2", projectNum:"10-11-6035", taskNum:"HOL", expenseType:"", ocip:"", projectName:"Holiday"},
-  {id:"p3", projectNum:"25-201-240", taskNum:"90", expenseType:"486", ocip:"sm1 cusw", projectName:"Q-Cells Ingot"},
-];
-const DEFAULT_EMPLOYEES = [
-  {id:"emp1", name:"Dan Hancock",   empNo:"HAN4127", role:"VDC/BIM Manager", projects:["p1","p2","p3"]},
-  {id:"emp2", name:"Jose Barron",   empNo:"BAR9939", role:"Team Member",      projects:["p1","p2","p3"]},
-  {id:"emp3", name:"James Pugh III",empNo:"PUG1723", role:"Team Member",      projects:["p1","p2","p3"]},
-];
-
-// ── Reminder hook ─────────────────────────────────────────────────────────────
-function useReminders(empId, reminderPrefs, timesheetData, weekKey) {
-  const timerRefs = useRef([]); const [toast,setToast] = useState(null); const shownRef = useRef({});
-  const alreadySubmitted = !!timesheetData[empId]?.[weekKey]?._submitted;
-  useEffect(() => {
-    timerRefs.current.forEach(clearTimeout); timerRefs.current = [];
-    if (!empId||alreadySubmitted||!isWeekday()) return;
-    const schedule = (timeStr,label) => {
-      if (!timeStr) return;
-      const now=new Date(); const {h,m}=parseTime(timeStr);
-      const target=new Date(); target.setHours(h,m,0,0);
-      const diff=target-now;
-      if (diff>0&&diff<86400000) {
-        const key=`${empId}-${timeStr}-${new Date().toDateString()}`;
-        if (shownRef.current[key]) return;
-        const tid=setTimeout(()=>{
-          shownRef.current[key]=true;
-          const today=todayWeekdayName();
-          const dayData=timesheetData[empId]?.[weekKey]?.[today];
-          const hasEntries=dayData?.entries?.some(e=>e.projectId);
-          if (!hasEntries) setToast(`${label}: Don't forget to log your time and daily report for ${today}!`);
-        },diff);
-        timerRefs.current.push(tid);
-      }
-    };
-    schedule("13:00","Daily Reminder");
-    if (reminderPrefs?.extra&&reminderPrefs.extra!=="13:00") schedule(reminderPrefs.extra,"Extra Reminder");
-    return ()=>timerRefs.current.forEach(clearTimeout);
-  },[empId,reminderPrefs?.extra,alreadySubmitted,weekKey]);
-  return {toast,setToast};
+function BeardCanvas() {
+  const [current,setCurrent]=useState(()=>Math.floor(Math.random()*BIM_IMAGES.length));
+  const [next,setNext]=useState(null);
+  const [fading,setFading]=useState(false);
+  useEffect(()=>{
+    const iv=setInterval(()=>{
+      const n=(current+1)%BIM_IMAGES.length;
+      setNext(n); setFading(true);
+      setTimeout(()=>{ setCurrent(n); setNext(null); setFading(false); },FADE_MS);
+    },HOLD_MS);
+    return ()=>clearInterval(iv);
+  },[current]);
+  const COLS=6,ROWS=14,cW=100/COLS,cH=100/ROWS;
+  const items=[];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) {
+    const isB=(r+c)%2===0;
+    const seed=r*31+c*17;
+    const nX=((seed*13+7)%21)-10, nY=((seed*19+11)%17)-8;
+    const lp=c*cW+cW*.5+nX*.35, tp=r*cH+cH*.5+nY*.35;
+    const depth=(r+c)%3;
+    const op=isB?[.22,.14,.18][depth]:[.13,.08,.11][depth];
+    const sz=isB?[12,10,11][depth]:[10,9,10][depth];
+    items.push({text:isB?'BEARD \u201CONE\u201D':'1% BETTER EVERY DAY',op,sz,lp,tp,isB});
+  }
+  const imgBase={position:"absolute",inset:0,backgroundSize:"cover",backgroundPosition:"center",filter:"grayscale(60%) sepia(30%)",transition:`opacity ${FADE_MS}ms ease-in-out`};
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+      {BIM_IMAGES.map((src,idx)=>{
+        const iC=idx===current,iN=idx===next;
+        const op=iC?(fading?0:.18):iN?(fading?.18:0):0;
+        return <div key={src} style={{...imgBase,backgroundImage:`url('${src}')`,opacity:op}}/>;
+      })}
+      <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center,transparent 30%,rgba(80,10,5,0.25) 100%)"}}/>
+      <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
+        {items.map((it,i)=>(
+          <span key={i} style={{position:"absolute",left:`${it.lp}%`,top:`${it.tp}%`,transform:"translate(-50%,-50%)",color:it.isB?`rgba(220,80,60,${it.op})`:`rgba(240,220,210,${it.op})`,fontSize:it.sz,fontWeight:900,letterSpacing:2,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+            {it.text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
@@ -88,19 +90,9 @@ function Badge({color,children}) {
   return <span style={{background:bg,color:fg,borderRadius:6,padding:"2px 10px",fontSize:11,fontWeight:700,letterSpacing:.5,whiteSpace:"nowrap"}}>{children}</span>;
 }
 function Btn({children,onClick,variant="primary",small,disabled,style={}}) {
-  const base={border:"none",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",fontWeight:700,letterSpacing:.5,transition:"all .15s",opacity:disabled?.45:1,padding:small?"6px 14px":"10px 22px",fontSize:small?12:13,...style};
-  const variants={
-    primary:{background:C.accent,color:C.white},
-    green:{background:C.green,color:"#05150f"},
-    danger:{background:C.red,color:C.white},
-    ghost:{background:"transparent",color:C.muted,border:`1px solid ${C.border}`},
-    amber:{background:C.amber,color:"#1a0d00"},
-    purple:{background:C.purple,color:"#0d0820"},
-    gold:{background:C.gold,color:"#1a0d00"},
-  };
-  return <button style={{...base,...variants[variant]}} onClick={onClick} disabled={disabled}
-    onMouseEnter={e=>{if(!disabled)e.currentTarget.style.opacity=".8";}}
-    onMouseLeave={e=>{e.currentTarget.style.opacity=disabled?".45":"1";}}>{children}</button>;
+  const base={border:"none",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",fontWeight:700,letterSpacing:.3,transition:"opacity .15s",opacity:disabled?.45:1,padding:small?"6px 14px":"10px 22px",fontSize:small?12:13,...style};
+  const v={primary:{background:C.accent,color:C.white},green:{background:C.green,color:"#05150f"},danger:{background:C.red,color:C.white},ghost:{background:"transparent",color:C.muted,border:`1px solid ${C.border}`},amber:{background:C.amber,color:"#1a0d00"},purple:{background:C.purple,color:"#0d0820"},gold:{background:C.gold,color:"#1a0d00"}};
+  return <button style={{...base,...v[variant]}} onClick={onClick} disabled={disabled} onMouseEnter={e=>{if(!disabled)e.currentTarget.style.opacity=".8";}} onMouseLeave={e=>{e.currentTarget.style.opacity=disabled?".45":"1";}}>{children}</button>;
 }
 function Input({value,onChange,placeholder,type="text",style={},disabled}) {
   return <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
@@ -118,487 +110,324 @@ function Select({value,onChange,children,style={}}) {
     {children}
   </select>;
 }
-
-// ── Background canvas with rotating BIM slideshow ────────────────────────────
-const BIM_IMAGES = [
-  "/bim-bg.png",
-  "/bim-bg-2.png",
-  "/bim-bg-3.png",
-  "/bim-bg-4.png",
-  "/bim-bg-5.png",
-  "/bim-bg-6.png",
-  "/bim-bg-7.png",
-];
-const FADE_DURATION = 2000;  // ms for crossfade
-const HOLD_DURATION = 7000;  // ms each image is shown
-
-function BeardCanvas() {
-  // Start at a random image each session
-  const [current, setCurrent] = useState(() => Math.floor(Math.random() * BIM_IMAGES.length));
-  const [next, setNext]       = useState(null);
-  const [fading, setFading]   = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const nextIdx = (current + 1) % BIM_IMAGES.length;
-      setNext(nextIdx);
-      setFading(true);
-      setTimeout(() => {
-        setCurrent(nextIdx);
-        setNext(null);
-        setFading(false);
-      }, FADE_DURATION);
-    }, HOLD_DURATION);
-    return () => clearInterval(interval);
-  }, [current]);
-
-  // Diagonal stripes — text alternates within each row AND between rows
-  const items = [];
-  const stripeSpacingY = 80;
-  const angleOffset    = 0.4;
-  const canvasW = 1600;
-  const canvasH = 1100;
-
-  let stripeIdx = 0;
-  for (let y = -100; y < canvasH + 100; y += stripeSpacingY) {
-    const rowIsBeardFirst = stripeIdx % 2 === 0;
-    const depth = stripeIdx % 3;
-    let itemIdx = 0;
-    for (let x = -200; x < canvasW + 200; x += 220) {
-      // Alternate within the row — each item flips from the previous
-      const isBeard = rowIsBeardFirst ? itemIdx % 2 === 0 : itemIdx % 2 !== 0;
-      const opacity = isBeard ? [0.22,0.15,0.19][depth] : [0.13,0.08,0.11][depth];
-      const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
-      const px = x + (y * angleOffset);
-      items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, px, py: y, isBeard });
-      itemIdx++;
-    }
-    stripeIdx++;
-  }
-
-  const imgBase = {
-    position:"absolute", inset:0, backgroundSize:"cover", backgroundPosition:"center",
-    filter:"grayscale(60%) sepia(30%)", transition:`opacity ${FADE_DURATION}ms ease-in-out`,
-  };
-
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-      {/* Render all images stacked, only current and next are visible */}
-      {BIM_IMAGES.map((src, idx) => {
-        const isCurrent = idx === current;
-        const isNext    = idx === next;
-        const opacity   = isCurrent ? (fading ? 0 : 0.18) : isNext ? (fading ? 0.18 : 0) : 0;
-        return (
-          <div key={src} style={{...imgBase, backgroundImage:`url('${src}')`, opacity}}/>
-        );
-      })}
-      {/* Subtle red overlay */}
-      <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
-      {/* Red vignette */}
-      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
-      {/* Diagonal stripe watermark */}
-      <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
-        {items.map((item,i)=>(
-          <span key={i} style={{
-            position:"absolute",
-            left: item.px,
-            top:  item.py,
-            color: item.isBeard ? `rgba(220,80,60,${item.opacity})` : `rgba(240,220,210,${item.opacity})`,
-            fontSize: item.size,
-            fontWeight: 900,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-            whiteSpace: "nowrap",
-            userSelect: "none",
-          }}>
-            {item.text}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+function Card({children,style={}}) {
+  return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
 }
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function ReminderToast({message,onDismiss}) {
-  if (!message) return null;
-  return <div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",zIndex:200,background:`linear-gradient(135deg,${C.accentDim},#1a0a08)`,border:`1px solid ${C.accent}`,borderRadius:14,padding:"16px 22px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 8px 32px rgba(0,0,0,.7)",maxWidth:480,width:"calc(100% - 40px)"}}>
-    <div style={{fontSize:26}}>⏰</div>
-    <div style={{flex:1}}><div style={{fontWeight:800,color:C.accent,fontSize:13,marginBottom:3}}>Time to log your hours!</div><div style={{color:C.text,fontSize:13}}>{message}</div></div>
-    <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}}>×</button>
+function SectionHead({children}) {
+  return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+    <div style={{width:3,height:16,background:C.accent,borderRadius:2}}/>{children}
   </div>;
 }
 
-// ── Excel Export (true .xlsx) ─────────────────────────────────────────────────
-function buildXLSXAndDownload(employees, weekStart, timesheetData, projects, settings) {
-  const weekKey = weekStart.toISOString().slice(0,10);
-  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6);
-  const weekEndStr = weekEnd.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"});
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({onLogin}) {
+  const [mode,setMode]=useState("login");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [name,setName]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [success,setSuccess]=useState("");
 
-  // Build CSV with clear per-employee sections — downloads as .csv but formatted for Excel
-  // Full .xlsx requires a server; for browser-only we produce a well-structured CSV
-  let csv = "";
-  employees.forEach((emp,ei) => {
-    if (ei>0) csv += "\n\n";
-    const wd = timesheetData[emp.id]?.[weekKey]||{};
-    const empProjs = projects.filter(p=>emp.projects?.includes(p.id));
-
-    csv += `=== ${emp.name.toUpperCase()} ===\n`;
-    csv += `EMPLOYEE NO.,${emp.empNo||"PENDING"},,,,,,,,EMPLOYEE NAME,${emp.name}\n`;
-    csv += `WEEK/PERIOD ENDING,${weekEndStr},,,,,,,,SUPERVISOR,${settings.supervisor||"Daniel Hancock"}\n`;
-    csv += `SITE/LOCATION,${wd._location||""},,,,,,,,EMPLOYEE SIGNATURE,\n\n`;
-
-    csv += `PROJECT #,TASK #,EXPENSE TYPE,PROJECT DESCRIPTION,`;
-    DAYS.forEach(d=>{ csv+=`${d.toUpperCase()} REG,${d.toUpperCase()} OT,${d.toUpperCase()} DT,`; });
-    csv += `TOTAL REG,TOTAL OT,TOTAL DT\n`;
-
-    csv += `,,,,`;
-    DAYS.forEach((_,i)=>{ csv+=`${excelDate(weekStart,i)},,,`; });
-    csv += `,,\n`;
-
-    let gReg=0,gOT=0,gDT=0;
-    const dayT = DAYS.map(()=>({reg:0,ot:0,dt:0}));
-    empProjs.forEach(proj=>{
-      let rReg=0,rOT=0,rDT=0;
-      csv += `${proj.projectNum},${proj.taskNum},${proj.expenseType||""},"${proj.projectName||""}",`;
-      DAYS.forEach((day,di)=>{
-        const entry=wd[day]?.entries?.find(e=>e.projectId===proj.id);
-        const reg=parseFloat(entry?.reg)||0; const ot=parseFloat(entry?.ot)||0; const dt=parseFloat(entry?.dt)||0;
-        csv+=`${reg||""},${ot||""},${dt||""},`;
-        rReg+=reg;rOT+=ot;rDT+=dt;dayT[di].reg+=reg;dayT[di].ot+=ot;dayT[di].dt+=dt;
-      });
-      gReg+=rReg;gOT+=rOT;gDT+=rDT;
-      csv+=`${rReg||0},${rOT||0},${rDT||0}\n`;
-    });
-
-    csv+=`,,TOTALS,,`;
-    dayT.forEach(d=>{ csv+=`${d.reg||0},${d.ot||0},${d.dt||0},`; });
-    csv+=`${gReg},${gOT},${gDT}\n`;
-    csv+=`\nUse codes: A=Absent  H=Holiday  JD=Jury Duty  V=Vacation  S=Sick Leave  LA=Leave of Absence\n`;
-  });
-
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");a.href=url;a.download=`BIS_Timesheets_${weekKey}.csv`;a.click();
-  URL.revokeObjectURL(url);
-}
-
-function buildDailyReportCSV(employees, weekStart, timesheetData) {
-  const weekKey=weekStart.toISOString().slice(0,10);
-  let csv="EMPLOYEE,DAY,DATE,LOCATION,DAILY REPORT,WEEK\n";
-  employees.forEach(emp=>{
-    const wd=timesheetData[emp.id]?.[weekKey]||{};
-    DAYS.forEach((day,i)=>{
-      const d=wd[day]; if(!d?.report) return;
-      csv+=`"${emp.name}","${day}","${dateOfDay(weekStart,i)}","${d.location||""}","${d.report.replace(/"/g,'""')}","${weekLabel(weekStart)}"\n`;
-    });
-  });
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");a.href=url;a.download=`BIS_DailyReport_${weekKey}.csv`;a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ── Admin Console ─────────────────────────────────────────────────────────────
-function AdminConsole({employees,setEmployees,projects,setProjects,settings,setSettings}) {
-  const [tab,setTab]=useState("team");
-  const [saved,setSaved]=useState("");
-  const [newName,setNewName]=useState(""); const [newEmpNo,setNewEmpNo]=useState(""); const [newRole,setNewRole]=useState("");
-  const [newProj,setNewProj]=useState({projectNum:"",taskNum:"",expenseType:"",ocip:"",projectName:""});
-  const [editEmp,setEditEmp]=useState(null); const [editProj,setEditProj]=useState(null);
-  const [settingsForm,setSettingsForm]=useState({...settings});
-  const [newLocation,setNewLocation]=useState("");
-
-  const flash=msg=>{setSaved(msg);setTimeout(()=>setSaved(""),2500);};
-
-  const addEmployee=()=>{
-    if(!newName.trim())return;
-    const emp={id:uid(),name:newName.trim(),empNo:newEmpNo.trim(),role:newRole.trim()||"Team Member",projects:projects.map(p=>p.id)};
-    setEmployees(p=>[...p,emp]);setNewName("");setNewEmpNo("");setNewRole("");flash("Employee added!");
+  const handleLogin=async()=>{
+    setLoading(true); setError("");
+    const {data,error:e}=await supabase.auth.signInWithPassword({email,password});
+    if(e){setError(e.message);setLoading(false);return;}
+    onLogin(data.user);
+    setLoading(false);
   };
-  const removeEmployee=id=>{if(window.confirm("Remove this employee?"))setEmployees(p=>p.filter(e=>e.id!==id));};
-  const saveEmpEdit=()=>{setEmployees(p=>p.map(e=>e.id===editEmp.id?editEmp:e));setEditEmp(null);flash("Employee updated!");};
-  const toggleEmpProject=(empId,projId)=>setEmployees(p=>p.map(e=>e.id===empId?{...e,projects:e.projects?.includes(projId)?e.projects.filter(x=>x!==projId):[...(e.projects||[]),projId]}:e));
 
-  const addProject=()=>{
-    if(!newProj.projectNum.trim())return;
-    const proj={id:uid(),...newProj};
-    setProjects(p=>[...p,proj]);
-    setEmployees(p=>p.map(e=>({...e,projects:[...(e.projects||[]),proj.id]})));
-    setNewProj({projectNum:"",taskNum:"",expenseType:"",ocip:"",projectName:""});flash("Project code added!");
+  const handleSignup=async()=>{
+    if(!name.trim()){setError("Please enter your name.");return;}
+    setLoading(true); setError("");
+    const {data,error:e}=await supabase.auth.signUp({email,password,options:{data:{name}}});
+    if(e){setError(e.message);setLoading(false);return;}
+    // Create profile
+    if(data.user){
+      await supabase.from("profiles").upsert({id:data.user.id,name:name.trim(),email,role:"employee",is_manager:false});
+    }
+    setSuccess("Account created! You can now sign in.");
+    setMode("login");
+    setLoading(false);
   };
-  const removeProject=id=>{if(window.confirm("Remove this project code?")){setProjects(p=>p.filter(x=>x.id!==id));setEmployees(p=>p.map(e=>({...e,projects:(e.projects||[]).filter(x=>x!==id)})));flash("Project removed!");}};
-  const saveProjEdit=()=>{setProjects(p=>p.map(x=>x.id===editProj.id?editProj:x));setEditProj(null);flash("Project updated!");};
 
-  const addLocation=()=>{
-    if(!newLocation.trim())return;
-    const locs=settingsForm.locations||DEFAULT_LOCATIONS;
-    if(!locs.includes(newLocation.trim())){setSettingsForm(p=>({...p,locations:[...locs,newLocation.trim()]}));}
-    setNewLocation("");
+  const handleForgot=async()=>{
+    if(!email){setError("Enter your email first.");return;}
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email,{redirectTo:"https://timesheet-app-snowy.vercel.app"});
+    setSuccess("Password reset email sent!");
+    setLoading(false);
   };
-  const removeLocation=loc=>setSettingsForm(p=>({...p,locations:(p.locations||DEFAULT_LOCATIONS).filter(l=>l!==loc)}));
 
-  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"settings",label:"⚙ Settings"}];
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif",position:"relative"}}>
+      <BeardCanvas/>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:420,padding:"0 20px"}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:60,height:60,borderRadius:16,background:"linear-gradient(135deg,#8b0000,#c0392b)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",boxShadow:"0 0 24px rgba(192,57,43,0.4)"}}>
+            <span style={{fontWeight:900,fontSize:24,color:C.white}}>B</span>
+          </div>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,justifyContent:"center"}}>
+            <span style={{fontWeight:900,fontSize:22,color:C.white,letterSpacing:2}}>BEARD</span>
+            <span style={{fontWeight:900,fontSize:22,color:C.accent,letterSpacing:2}}>&ldquo;ONE&rdquo;</span>
+          </div>
+          <div style={{color:C.muted,fontSize:11,letterSpacing:3,textTransform:"uppercase",marginTop:4}}>VDC Department · Timesheet Platform</div>
+        </div>
 
-  const sectionHead = (label) => (
-    <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-      <div style={{width:3,height:16,background:C.accent,borderRadius:2}}/>{label}
-    </div>
-  );
+        <Card style={{padding:28}}>
+          <h2 style={{margin:"0 0 20px",color:C.text,fontSize:18,fontWeight:800,textAlign:"center"}}>
+            {mode==="login"?"Sign In":mode==="signup"?"Create Account":"Reset Password"}
+          </h2>
 
-  return (
-    <div style={{maxWidth:960,margin:"0 auto",position:"relative",zIndex:1}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
-        <div style={{width:40,height:40,background:`linear-gradient(135deg,${C.accent},${C.gold})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔧</div>
-        <div><h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900,letterSpacing:.5}}>Admin Console</h2><p style={{margin:0,color:C.muted,fontSize:13}}>Manage team, projects, locations & settings</p></div>
-        {saved&&<Badge color="green">✓ {saved}</Badge>}
+          {error&&<div style={{background:C.redDim,border:`1px solid ${C.red}`,borderRadius:8,padding:"10px 14px",color:C.red,fontSize:13,marginBottom:16}}>{error}</div>}
+          {success&&<div style={{background:C.greenDim,border:`1px solid ${C.green}`,borderRadius:8,padding:"10px 14px",color:C.green,fontSize:13,marginBottom:16}}>{success}</div>}
+
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {mode==="signup"&&(
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>FULL NAME</label>
+              <Input value={name} onChange={setName} placeholder="Your full name"/></div>
+            )}
+            <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMAIL</label>
+            <Input value={email} onChange={setEmail} placeholder="you@beardintegrated.com" type="email"/></div>
+            {mode!=="forgot"&&(
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PASSWORD</label>
+              <Input value={password} onChange={setPassword} placeholder="••••••••" type="password"/></div>
+            )}
+          </div>
+
+          <div style={{marginTop:20}}>
+            {mode==="login"&&<Btn variant="primary" style={{width:"100%"}} onClick={handleLogin} disabled={loading}>{loading?"Signing in…":"Sign In"}</Btn>}
+            {mode==="signup"&&<Btn variant="primary" style={{width:"100%"}} onClick={handleSignup} disabled={loading}>{loading?"Creating…":"Create Account"}</Btn>}
+            {mode==="forgot"&&<Btn variant="amber" style={{width:"100%"}} onClick={handleForgot} disabled={loading}>{loading?"Sending…":"Send Reset Email"}</Btn>}
+          </div>
+
+          <div style={{textAlign:"center",marginTop:16,display:"flex",flexDirection:"column",gap:8}}>
+            {mode==="login"&&<>
+              <button onClick={()=>{setMode("signup");setError("");setSuccess("");}} style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Don't have an account? Sign up</button>
+              <button onClick={()=>{setMode("forgot");setError("");setSuccess("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Forgot password?</button>
+            </>}
+            {mode!=="login"&&<button onClick={()=>{setMode("login");setError("");setSuccess("");}} style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>← Back to sign in</button>}
+          </div>
+        </Card>
       </div>
-
-      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,marginBottom:24}}>
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",borderBottom:`3px solid ${tab===t.id?C.accent:"transparent"}`,color:tab===t.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,padding:"12px 20px",transition:"color .15s"}}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* TEAM */}
-      {tab==="team"&&(
-        <div>
-          {employees.map(emp=>(
-            <div key={emp.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,marginBottom:12,overflow:"hidden"}}>
-              {editEmp?.id===emp.id?(
-                <div style={{padding:20}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>FULL NAME</label><Input value={editEmp.name} onChange={v=>setEditEmp(p=>({...p,name:v}))}/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>EMPLOYEE NO.</label><Input value={editEmp.empNo} onChange={v=>setEditEmp(p=>({...p,empNo:v}))} placeholder="e.g. HAN4127"/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>ROLE</label><Input value={editEmp.role} onChange={v=>setEditEmp(p=>({...p,role:v}))}/></div>
-                  </div>
-                  <div style={{marginBottom:16}}>
-                    <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:8}}>ASSIGNED PROJECT CODES</label>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                      {projects.map(proj=>{
-                        const assigned=editEmp.projects?.includes(proj.id);
-                        return(
-                          <button key={proj.id} onClick={()=>setEditEmp(p=>({...p,projects:p.projects?.includes(proj.id)?p.projects.filter(x=>x!==proj.id):[...(p.projects||[]),proj.id]}))}
-                            style={{background:assigned?C.accentDim:"#0f0f0f",border:`1px solid ${assigned?C.accent:C.border}`,borderRadius:8,color:assigned?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontSize:12,padding:"6px 12px",transition:"all .15s"}}>
-                            {assigned?"✓ ":""}{proj.projectName||proj.projectNum} <span style={{color:C.muted,fontSize:11}}>({proj.taskNum})</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveEmpEdit}>Save Changes</Btn><Btn variant="ghost" small onClick={()=>setEditEmp(null)}>Cancel</Btn></div>
-                </div>
-              ):(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",flexWrap:"wrap",gap:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:14}}>
-                    <div style={{width:40,height:40,background:C.accentDim,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,color:C.accent,fontSize:14,border:`1px solid ${C.accent}33`}}>{emp.name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
-                    <div>
-                      <div style={{fontWeight:800,color:C.text,fontSize:14}}>{emp.name}</div>
-                      <div style={{color:C.muted,fontSize:12,marginTop:2}}>{emp.role} · <span style={{color:emp.empNo?C.gold:C.amber}}>{emp.empNo||"⚠ No Employee No."}</span></div>
-                      <div style={{color:C.muted,fontSize:11,marginTop:3}}>{(emp.projects||[]).length} project codes assigned</div>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:8}}><Btn variant="ghost" small onClick={()=>setEditEmp({...emp})}>✏ Edit</Btn><Btn variant="danger" small onClick={()=>removeEmployee(emp.id)}>Remove</Btn></div>
-                </div>
-              )}
-            </div>
-          ))}
-          <div style={{background:C.card,border:`2px dashed ${C.border}`,borderRadius:12,padding:20,marginTop:8}}>
-            {sectionHead("Add New Team Member")}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>FULL NAME *</label><Input value={newName} onChange={setNewName} placeholder="First Last"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>EMPLOYEE NO.</label><Input value={newEmpNo} onChange={setNewEmpNo} placeholder="Can add later"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>ROLE</label><Input value={newRole} onChange={setNewRole} placeholder="Team Member"/></div>
-            </div>
-            <Btn variant="primary" onClick={addEmployee} disabled={!newName.trim()}>+ Add Team Member</Btn>
-          </div>
-        </div>
-      )}
-
-      {/* PROJECTS */}
-      {tab==="projects"&&(
-        <div>
-          {projects.map(proj=>(
-            <div key={proj.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
-              {editProj?.id===proj.id?(
-                <div style={{padding:16}}>
-                  <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>PROJECT NAME</label><Input value={editProj.projectName||""} onChange={v=>setEditProj(p=>({...p,projectName:v}))}/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>PROJECT #</label><Input value={editProj.projectNum} onChange={v=>setEditProj(p=>({...p,projectNum:v}))}/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>TASK #</label><Input value={editProj.taskNum} onChange={v=>setEditProj(p=>({...p,taskNum:v}))}/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>EXPENSE TYPE</label><Input value={editProj.expenseType} onChange={v=>setEditProj(p=>({...p,expenseType:v}))}/></div>
-                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>OCIP Y/N</label><Input value={editProj.ocip} onChange={v=>setEditProj(p=>({...p,ocip:v}))}/></div>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:8}}>ASSIGNED EMPLOYEES</label>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                      {employees.map(emp=>{
-                        const assigned=emp.projects?.includes(editProj.id);
-                        return <button key={emp.id} onClick={()=>toggleEmpProject(emp.id,editProj.id)}
-                          style={{background:assigned?C.accentDim:"#0f0f0f",border:`1px solid ${assigned?C.accent:C.border}`,borderRadius:8,color:assigned?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontSize:12,padding:"6px 12px"}}>
-                          {assigned?"✓ ":""}{emp.name}
-                        </button>;
-                      })}
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveProjEdit}>Save</Btn><Btn variant="ghost" small onClick={()=>setEditProj(null)}>Cancel</Btn></div>
-                </div>
-              ):(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",flexWrap:"wrap",gap:10}}>
-                  <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
-                    {proj.projectName&&<span style={{color:C.gold,fontWeight:800,fontSize:14}}>{proj.projectName}</span>}
-                    <span style={{color:C.accent,fontWeight:700}}>{proj.projectNum}</span>
-                    <span style={{color:C.muted,fontSize:12}}>Task: <strong style={{color:C.text}}>{proj.taskNum}</strong></span>
-                    {proj.expenseType&&<span style={{color:C.muted,fontSize:12}}>Exp: <strong style={{color:C.text}}>{proj.expenseType}</strong></span>}
-                    {proj.ocip&&<span style={{color:C.muted,fontSize:12}}>OCIP: <strong style={{color:C.text}}>{proj.ocip}</strong></span>}
-                    <span style={{color:C.muted,fontSize:11}}>{employees.filter(e=>e.projects?.includes(proj.id)).length} employees</span>
-                  </div>
-                  <div style={{display:"flex",gap:8}}><Btn variant="ghost" small onClick={()=>setEditProj({...proj})}>✏ Edit</Btn><Btn variant="danger" small onClick={()=>removeProject(proj.id)}>Remove</Btn></div>
-                </div>
-              )}
-            </div>
-          ))}
-          <div style={{background:C.card,border:`2px dashed ${C.border}`,borderRadius:12,padding:20,marginTop:8}}>
-            {sectionHead("Add New Project Code")}
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:14}}>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>PROJECT NAME</label><Input value={newProj.projectName} onChange={v=>setNewProj(p=>({...p,projectName:v}))} placeholder="e.g. Q-Cells Ingot"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>PROJECT # *</label><Input value={newProj.projectNum} onChange={v=>setNewProj(p=>({...p,projectNum:v}))} placeholder="10-11-6010"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>TASK #</label><Input value={newProj.taskNum} onChange={v=>setNewProj(p=>({...p,taskNum:v}))} placeholder="OH"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>EXPENSE TYPE</label><Input value={newProj.expenseType} onChange={v=>setNewProj(p=>({...p,expenseType:v}))} placeholder="486"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>OCIP Y/N</label><Input value={newProj.ocip} onChange={v=>setNewProj(p=>({...p,ocip:v}))} placeholder="sm1 cusw"/></div>
-            </div>
-            <Btn variant="primary" onClick={addProject} disabled={!newProj.projectNum.trim()}>+ Add Project Code</Btn>
-          </div>
-        </div>
-      )}
-
-      {/* LOCATIONS */}
-      {tab==="locations"&&(
-        <div style={{maxWidth:500}}>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:16}}>
-            {sectionHead("Location List")}
-            <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Employees pick from this list on their timesheet. They can also type a custom location.</p>
-            {(settingsForm.locations||DEFAULT_LOCATIONS).map(loc=>(
-              <div key={loc} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"#0f0f0f",borderRadius:8,marginBottom:8,border:`1px solid ${C.border}`}}>
-                <span style={{color:C.text,fontWeight:600}}>📍 {loc}</span>
-                <Btn variant="danger" small onClick={()=>removeLocation(loc)}>Remove</Btn>
-              </div>
-            ))}
-            <div style={{display:"flex",gap:10,marginTop:14}}>
-              <Input value={newLocation} onChange={setNewLocation} placeholder="Add new location..." style={{flex:1}}/>
-              <Btn variant="primary" onClick={addLocation} disabled={!newLocation.trim()}>Add</Btn>
-            </div>
-          </div>
-          <Btn variant="gold" onClick={()=>{setSettings(settingsForm);flash("Locations saved!");}}>Save Locations</Btn>
-        </div>
-      )}
-
-      {/* SETTINGS */}
-      {tab==="settings"&&(
-        <div style={{maxWidth:560}}>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:24}}>
-            {sectionHead("Platform Settings")}
-            <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>COMPANY NAME</label><Input value={settingsForm.company} onChange={v=>setSettingsForm(p=>({...p,company:v}))}/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>SUPERVISOR NAME</label><Input value={settingsForm.supervisor} onChange={v=>setSettingsForm(p=>({...p,supervisor:v}))}/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>MANAGER EMAIL (Review)</label><Input value={settingsForm.managerEmail} onChange={v=>setSettingsForm(p=>({...p,managerEmail:v}))} placeholder="you@beardintegrated.com"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>PAYROLL EMAIL (Final Submission)</label><Input value={settingsForm.payrollEmail} onChange={v=>setSettingsForm(p=>({...p,payrollEmail:v}))} placeholder="payroll@beardintegrated.com"/></div>
-              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>CC EMAIL (Optional — additional recipient)</label><Input value={settingsForm.ccEmail||""} onChange={v=>setSettingsForm(p=>({...p,ccEmail:v}))} placeholder="cc@beardintegrated.com"/></div>
-            </div>
-            <div style={{marginTop:20}}><Btn variant="primary" onClick={()=>{setSettings(settingsForm);flash("Settings saved!");}}>Save Settings</Btn></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ── Employee View ─────────────────────────────────────────────────────────────
-function EmployeeView({employee,weekStart,data,onSave,reminderPrefs,onSaveReminder,projects,settings}) {
-  const weekKey=weekStart.toISOString().slice(0,10);
-  const stored=data[employee.id]?.[weekKey]||{};
-  const empProjects=projects.filter(p=>employee.projects?.includes(p.id));
-  const locations=settings.locations||DEFAULT_LOCATIONS;
+// ── PTO Request Modal ─────────────────────────────────────────────────────────
+function PTOModal({profile,onClose,onSubmit}) {
+  const [type,setType]=useState("PTO");
+  const [startDate,setStartDate]=useState("");
+  const [endDate,setEndDate]=useState("");
+  const [hours,setHours]=useState("");
+  const [reason,setReason]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
 
-  const [days,setDays]=useState(()=>
-    DAYS.map((d,i)=>({
-      name:d,date:dateOfDay(weekStart,i),
-      entries:stored[d]?.entries||empProjects.map(p=>({id:uid(),projectId:p.id,reg:"",ot:"",dt:""})),
-      notes:stored[d]?.notes||"",report:stored[d]?.report||"",location:stored[d]?.location||"",
-    }))
+  const handleSubmit=async()=>{
+    if(!startDate||!endDate){setError("Please select start and end dates.");return;}
+    setLoading(true);
+    const {error:e}=await supabase.from("pto_requests").insert({
+      employee_id:profile.id, request_type:type,
+      start_date:startDate, end_date:endDate,
+      hours:parseFloat(hours)||null, reason, status:"pending"
+    });
+    if(e){setError(e.message);setLoading(false);return;}
+    onSubmit();
+    onClose();
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <Card style={{padding:28,width:"100%",maxWidth:440}}>
+        <h3 style={{margin:"0 0 20px",color:C.text,fontSize:16,fontWeight:800}}>📅 Request Time Off</h3>
+        {error&&<div style={{background:C.redDim,color:C.red,borderRadius:8,padding:"10px 14px",fontSize:13,marginBottom:14}}>{error}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>TYPE</label>
+            <Select value={type} onChange={setType} style={{width:"100%"}}>
+              <option value="PTO">PTO (Paid Time Off)</option>
+              <option value="Unpaid">Unpaid Time Off</option>
+              <option value="Sick">Sick Leave</option>
+              <option value="Holiday">Holiday</option>
+              <option value="Jury Duty">Jury Duty</option>
+              <option value="Leave of Absence">Leave of Absence</option>
+            </Select>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>START DATE</label><Input value={startDate} onChange={setStartDate} type="date"/></div>
+            <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>END DATE</label><Input value={endDate} onChange={setEndDate} type="date"/></div>
+          </div>
+          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>HOURS (optional)</label><Input value={hours} onChange={setHours} type="number" placeholder="e.g. 8"/></div>
+          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>REASON (optional)</label><Textarea value={reason} onChange={setReason} placeholder="Brief description..." rows={2}/></div>
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+          <Btn variant="ghost" small onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" small onClick={handleSubmit} disabled={loading}>{loading?"Submitting…":"Submit Request"}</Btn>
+        </div>
+      </Card>
+    </div>
   );
-  const [submitted,setSubmitted]=useState(!!stored._submitted);
+}
+
+// ── Employee Timesheet View ───────────────────────────────────────────────────
+function EmployeeView({profile,projects,settings}) {
+  const [days,setDays]=useState(()=>DAYS.map((n,i)=>({name:n,date:dateOfDay(WS,i),entries:{},notes:"",report:"",location:""})));
+  const [submitted,setSubmitted]=useState(false);
   const [savedMsg,setSavedMsg]=useState(false);
-  const [showReminders,setShowReminders]=useState(false);
-  const {toast,setToast}=useReminders(employee.id,reminderPrefs[employee.id],data,weekKey);
+  const [loading,setLoading]=useState(true);
+  const [timesheetId,setTimesheetId]=useState(null);
+  const [showPTO,setShowPTO]=useState(false);
+  const [myPTO,setMyPTO]=useState([]);
+  const [showReminderPanel,setShowReminderPanel]=useState(false);
+  const [extraReminder,setExtraReminder]=useState("");
+  const locations=settings?.locations||DEFAULT_LOCATIONS;
+  const empProjects=projects.filter(p=>p.assigned);
 
-  useEffect(()=>{if("Notification"in window&&Notification.permission==="default")Notification.requestPermission();},[]);
+  useEffect(()=>{ loadTimesheet(); loadMyPTO(); },[]);
 
-  const updateEntry=(di,pid,field,val)=>{setDays(p=>p.map((d,i)=>i===di?{...d,entries:d.entries.map(e=>e.projectId===pid?{...e,[field]:val}:e)}:d));setSavedMsg(false);};
+  const loadTimesheet=async()=>{
+    setLoading(true);
+    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+    const {data:ts}=await supabase.from("timesheets").select("*").eq("employee_id",profile.id).eq("week_start",WEEK_KEY).single();
+    if(ts){
+      setTimesheetId(ts.id);
+      setSubmitted(ts.status==="submitted"||ts.status==="approved");
+      const {data:entries}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",ts.id);
+      const {data:reports}=await supabase.from("daily_reports").select("*").eq("timesheet_id",ts.id);
+      setDays(prev=>prev.map((d,i)=>{
+        const dayEntries={};
+        (entries||[]).filter(e=>e.day_name===d.name).forEach(e=>{ dayEntries[e.project_id]={reg:e.reg_hours||"",ot:e.ot_hours||"",dt:e.dt_hours||""}; });
+        const rep=(reports||[]).find(r=>r.day_name===d.name);
+        return{...d,entries:dayEntries,notes:rep?.notes||"",report:rep?.report_text||"",location:rep?.location||""};
+      }));
+    }
+    setLoading(false);
+  };
+
+  const loadMyPTO=async()=>{
+    const {data}=await supabase.from("pto_requests").select("*").eq("employee_id",profile.id).order("created_at",{ascending:false}).limit(10);
+    setMyPTO(data||[]);
+  };
+
+  const updateEntry=(dayIdx,projId,field,val)=>{
+    setDays(p=>p.map((d,i)=>i===dayIdx?{...d,entries:{...d.entries,[projId]:{...(d.entries[projId]||{}), [field]:val}}}:d));
+    setSavedMsg(false);
+  };
   const updateDay=(i,field,val)=>{setDays(p=>p.map((d,idx)=>idx===i?{...d,[field]:val}:d));setSavedMsg(false);};
 
-  const grandReg=days.reduce((s,d)=>s+d.entries.reduce((ss,e)=>ss+(parseFloat(e.reg)||0),0),0);
-  const grandOT=days.reduce((s,d)=>s+d.entries.reduce((ss,e)=>ss+(parseFloat(e.ot)||0),0),0);
-  const grandDT=days.reduce((s,d)=>s+d.entries.reduce((ss,e)=>ss+(parseFloat(e.dt)||0),0),0);
+  const grandReg=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.reg)||0),0),0);
+  const grandOT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.ot)||0),0),0);
+  const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
 
-  const handleSave=(submit=false)=>{
-    const dd={};
-    days.forEach(d=>{dd[d.name]={entries:d.entries,notes:d.notes,report:d.report,location:d.location};});
-    if(submit)dd._submitted=true;
-    onSave(employee.id,weekKey,dd);setSavedMsg(true);
-    if(submit)setSubmitted(true);
+  const handleSave=async(submit=false)=>{
+    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+    let tsId=timesheetId;
+    if(!tsId){
+      const {data:ts,error:e}=await supabase.from("timesheets").upsert({
+        employee_id:profile.id, week_start:WEEK_KEY,
+        week_end:toDateStr(weekEnd), status:submit?"submitted":"draft",
+        submitted_at:submit?new Date().toISOString():null
+      },{onConflict:"employee_id,week_start"}).select().single();
+      if(e){alert("Save error: "+e.message);return;}
+      tsId=ts.id; setTimesheetId(tsId);
+    } else if(submit){
+      await supabase.from("timesheets").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",tsId);
+    }
+    // Save entries
+    for(const day of days){
+      for(const proj of empProjects){
+        const entry=day.entries[proj.id]||{};
+        const reg=parseFloat(entry.reg)||0, ot=parseFloat(entry.ot)||0, dt=parseFloat(entry.dt)||0;
+        if(reg||ot||dt){
+          await supabase.from("timesheet_entries").upsert({
+            timesheet_id:tsId, project_id:proj.id, day_name:day.name,
+            reg_hours:reg, ot_hours:ot, dt_hours:dt
+          },{onConflict:"timesheet_id,project_id,day_name"});
+        }
+      }
+      if(day.notes||day.report||day.location){
+        await supabase.from("daily_reports").upsert({
+          timesheet_id:tsId, day_name:day.name,
+          report_text:day.report, notes:day.notes, location:day.location
+        },{onConflict:"timesheet_id,day_name"});
+      }
+    }
+    setSavedMsg(true);
+    if(submit) setSubmitted(true);
   };
 
-  const todayName=todayWeekdayName();
   const timeOptions=[];
-  for(let h=7;h<=19;h++)["00","30"].forEach(m=>{const v=`${String(h).padStart(2,"0")}:${m}`;if(v!=="13:00")timeOptions.push(v);});
+  for(let h=7;h<=19;h++) ["00","30"].forEach(m=>{ const v=`${String(h).padStart(2,"0")}:${m}`; if(v!=="13:00") timeOptions.push(v); });
 
-  return (
+  if(loading) return <div style={{textAlign:"center",padding:60,color:C.muted}}>Loading your timesheet…</div>;
+
+  return(
     <div style={{maxWidth:1000,margin:"0 auto",position:"relative",zIndex:1}}>
-      <ReminderToast message={toast} onDismiss={()=>setToast(null)}/>
+      {showPTO&&<PTOModal profile={profile} onClose={()=>setShowPTO(false)} onSubmit={loadMyPTO}/>}
+
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>{employee.name}</h2>
-          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(weekStart)} · {employee.empNo?<span style={{color:C.gold}}>#{employee.empNo}</span>:<span style={{color:C.amber}}>⚠ Employee No. pending</span>}</p>
+          <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>{profile.name}</h2>
+          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           {submitted?<Badge color="green">✓ Submitted</Badge>:savedMsg?<Badge color="amber">Saved</Badge>:null}
           <div style={{background:C.accentDim,borderRadius:8,padding:"8px 14px",fontWeight:800,fontSize:12,color:C.accent,border:`1px solid ${C.accent}33`}}>
             REG {grandReg.toFixed(1)} · OT {grandOT.toFixed(1)} · DT {grandDT.toFixed(1)} · <span style={{color:C.green}}>Total {grandTotal.toFixed(1)}</span>
           </div>
-          <Btn variant="ghost" small onClick={()=>setShowReminders(r=>!r)}>🔔 Reminders</Btn>
+          <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
+          <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
         </div>
       </div>
 
-      {showReminders&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:20}}>
+      {showReminderPanel&&(
+        <Card style={{padding:18,marginBottom:20}}>
           <div style={{fontWeight:800,color:C.text,fontSize:14,marginBottom:14}}>🔔 Reminder Settings</div>
           <div style={{background:"#0f0f0f",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
             <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Every weekday at 1:00 PM</div></div>
             <Badge color="green">Always On</Badge>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <Select value={reminderPrefs[employee.id]?.extra||""} onChange={v=>onSaveReminder(employee.id,{extra:v})} style={{flex:1}}>
+            <Select value={extraReminder} onChange={setExtraReminder} style={{flex:1}}>
               <option value="">— No extra reminder —</option>
               {timeOptions.map(t=><option key={t} value={t}>{fmt12(t)}</option>)}
             </Select>
             <span style={{color:C.muted,fontSize:12}}>Additional reminder</span>
           </div>
-        </div>
+        </Card>
+      )}
+
+      {/* PTO history */}
+      {myPTO.length>0&&(
+        <Card style={{padding:16,marginBottom:20}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:13,marginBottom:12}}>My Time Off Requests</div>
+          {myPTO.map(req=>(
+            <div key={req.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+              <div>
+                <span style={{color:C.gold,fontWeight:700}}>{req.request_type}</span>
+                <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
+                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
+              </div>
+              <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
+                {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
+              </Badge>
+            </div>
+          ))}
+        </Card>
       )}
 
       {days.map((day,i)=>{
-        const isToday=day.name===todayName;
-        const dReg=day.entries.reduce((s,e)=>s+(parseFloat(e.reg)||0),0);
-        const dOT=day.entries.reduce((s,e)=>s+(parseFloat(e.ot)||0),0);
-        const dDT=day.entries.reduce((s,e)=>s+(parseFloat(e.dt)||0),0);
-        const dTotal=dReg+dOT+dDT;
+        const isToday=day.name===todayName();
+        const dReg=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.reg)||0),0);
+        const dOT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.ot)||0),0);
+        const dDT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.dt)||0),0);
         return(
-          <div key={day.name} style={{background:C.card,border:`1px solid ${isToday?C.accent:C.border}`,borderRadius:12,marginBottom:14,overflow:"hidden",boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none"}}>
+          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,${C.accentDim},${C.surface})`:C.surface}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontWeight:900,color:isToday?C.accent:C.text,fontSize:14,letterSpacing:.3}}>{day.name}</span>
+                <span style={{fontWeight:900,color:isToday?C.accent:C.text,fontSize:14}}>{day.name}</span>
                 <span style={{color:C.muted,fontSize:12}}>{day.date}</span>
                 {isToday&&<Badge color="accent">Today</Badge>}
               </div>
@@ -606,7 +435,7 @@ function EmployeeView({employee,weekStart,data,onSave,reminderPrefs,onSaveRemind
                 <span>REG <strong style={{color:C.text}}>{dReg.toFixed(1)}</strong></span>
                 <span>OT <strong style={{color:dOT>0?C.amber:C.text}}>{dOT.toFixed(1)}</strong></span>
                 <span>DT <strong style={{color:dDT>0?C.red:C.text}}>{dDT.toFixed(1)}</strong></span>
-                <span style={{color:C.green,fontWeight:800}}>{dTotal.toFixed(1)} hrs</span>
+                <span style={{color:C.green,fontWeight:800}}>{(dReg+dOT+dDT).toFixed(1)} hrs</span>
               </div>
             </div>
             <div style={{padding:18}}>
@@ -616,14 +445,11 @@ function EmployeeView({employee,weekStart,data,onSave,reminderPrefs,onSaveRemind
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {locations.map(loc=>(
                     <button key={loc} onClick={()=>!submitted&&updateDay(i,"location",day.location===loc?"":loc)}
-                      style={{background:day.location===loc?C.accentDim:"#0f0f0f",border:`1px solid ${day.location===loc?C.accent:C.border}`,borderRadius:8,color:day.location===loc?C.accent:C.muted,cursor:submitted?"default":"pointer",fontFamily:"inherit",fontSize:12,padding:"5px 12px",transition:"all .15s"}}>
+                      style={{background:day.location===loc?C.accentDim:"#0f0f0f",border:`1px solid ${day.location===loc?C.accent:C.border}`,borderRadius:8,color:day.location===loc?C.accent:C.muted,cursor:submitted?"default":"pointer",fontFamily:"inherit",fontSize:12,padding:"5px 12px"}}>
                       {loc}
                     </button>
                   ))}
-                  {!submitted&&(
-                    <Input value={locations.includes(day.location)?"":(day.location||"")} onChange={v=>updateDay(i,"location",v)} placeholder="Custom location..." style={{width:160,fontSize:12,padding:"5px 10px"}}/>
-                  )}
-                  {day.location&&!locations.includes(day.location)&&<Badge color="accent">{day.location}</Badge>}
+                  {!submitted&&<Input value={locations.includes(day.location)?"":(day.location||"")} onChange={v=>updateDay(i,"location",v)} placeholder="Custom…" style={{width:130,fontSize:12,padding:"5px 10px"}}/>}
                 </div>
               </div>
 
@@ -631,37 +457,36 @@ function EmployeeView({employee,weekStart,data,onSave,reminderPrefs,onSaveRemind
               <div style={{marginBottom:14}}>
                 <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:8,marginBottom:6}}>
                   <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.8}}>PROJECT / TASK</div>
-                  <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>REG HRS</div>
-                  <div style={{color:C.amber,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>OT HRS</div>
-                  <div style={{color:C.red,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>DT HRS</div>
+                  <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>REG</div>
+                  <div style={{color:C.amber,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>OT</div>
+                  <div style={{color:C.red,fontSize:11,fontWeight:700,letterSpacing:.8,textAlign:"center"}}>DT</div>
                 </div>
                 {empProjects.map(proj=>{
-                  const entry=day.entries.find(e=>e.projectId===proj.id)||{reg:"",ot:"",dt:""};
+                  const entry=day.entries[proj.id]||{reg:"",ot:"",dt:""};
                   return(
                     <div key={proj.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:8,marginBottom:8,alignItems:"center"}}>
                       <div style={{background:"#0f0f0f",borderRadius:8,padding:"8px 12px",border:`1px solid ${C.border}`}}>
-                        <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{proj.projectName||proj.projectNum}</span>
-                        <span style={{color:C.accent,fontSize:11,marginLeft:8}}>{proj.projectNum}</span>
-                        <span style={{color:C.muted,fontSize:11,marginLeft:6}}>{proj.taskNum}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{proj.project_name||proj.project_num}</span>
+                        <span style={{color:C.accent,fontSize:11,marginLeft:8}}>{proj.project_num}</span>
+                        <span style={{color:C.muted,fontSize:11,marginLeft:6}}>{proj.task_num}</span>
                       </div>
-                      <Input value={entry.reg} onChange={v=>updateEntry(i,proj.id,"reg",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center"}}/>
-                      <Input value={entry.ot} onChange={v=>updateEntry(i,proj.id,"ot",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center",borderColor:entry.ot?C.amber:C.border}}/>
-                      <Input value={entry.dt} onChange={v=>updateEntry(i,proj.id,"dt",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center",borderColor:entry.dt?C.red:C.border}}/>
+                      <Input value={entry.reg||""} onChange={v=>updateEntry(i,proj.id,"reg",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center"}}/>
+                      <Input value={entry.ot||""} onChange={v=>updateEntry(i,proj.id,"ot",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center",borderColor:entry.ot?C.amber:C.border}}/>
+                      <Input value={entry.dt||""} onChange={v=>updateEntry(i,proj.id,"dt",v)} placeholder="0" type="number" disabled={submitted} style={{textAlign:"center",borderColor:entry.dt?C.red:C.border}}/>
                     </div>
                   );
                 })}
               </div>
-
               <div style={{marginBottom:12}}>
                 <label style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>Notes</label>
-                <Textarea value={day.notes} onChange={v=>updateDay(i,"notes",v)} placeholder="Overtime reason, absence codes (A/H/V/S/JD/LA), etc." rows={2} disabled={submitted}/>
+                <Textarea value={day.notes} onChange={v=>updateDay(i,"notes",v)} placeholder="Overtime reason, absence codes…" rows={2} disabled={submitted}/>
               </div>
               <div>
                 <label style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>Daily Report <span style={{color:C.accent,fontSize:10}}>→ Daily Report spreadsheet</span></label>
                 <Textarea value={day.report} onChange={v=>updateDay(i,"report",v)} placeholder="What did you accomplish today? Blockers, milestones, updates?" rows={3} disabled={submitted}/>
               </div>
             </div>
-          </div>
+          </Card>
         );
       })}
 
@@ -677,147 +502,559 @@ function EmployeeView({employee,weekStart,data,onSave,reminderPrefs,onSaveRemind
 }
 
 // ── Manager View ──────────────────────────────────────────────────────────────
-function ManagerView({employees,weekStart,data,settings,projects,onApprove}) {
-  const weekKey=weekStart.toISOString().slice(0,10);
+function ManagerView({employees,projects,settings}) {
   const [selected,setSelected]=useState(null);
+  const [detail,setDetail]=useState(null);
+  const [ptoRequests,setPtoRequests]=useState([]);
   const [status,setStatus]=useState("");
-  const [sending,setSending]=useState(false);
-  const submitted=employees.filter(e=>data[e.id]?.[weekKey]?._submitted);
+  const [rejectNote,setRejectNote]=useState("");
+  const [showReject,setShowReject]=useState(null);
+  const [timesheets,setTimesheets]=useState([]);
+  const [loading,setLoading]=useState(true);
 
-  const handleExport=async(toPayroll)=>{
-    if(!settings.managerEmail){setStatus("⚠️ Set manager email in Admin → Settings first.");return;}
-    setSending(true);setStatus("");
-    await new Promise(r=>setTimeout(r,1200));
-    setSending(false);
-    buildXLSXAndDownload(submitted,weekStart,data,projects,settings);
-    buildDailyReportCSV(submitted,weekStart,data);
-    const target=toPayroll?(settings.payrollEmail||"payroll"):settings.managerEmail;
-    setStatus(`✓ Timesheet & Daily Report exported. In live deployment, files email to ${target} automatically.`);
-    if(toPayroll)onApprove(weekKey,submitted.map(e=>e.id));
+  useEffect(()=>{ loadData(); },[]);
+
+  const loadData=async()=>{
+    setLoading(true);
+    const {data:ts}=await supabase.from("timesheets").select("*,profiles(name,emp_no)").eq("week_start",WEEK_KEY);
+    const {data:pto}=await supabase.from("pto_requests").select("*,profiles(name)").eq("status","pending").order("created_at",{ascending:false});
+    setTimesheets(ts||[]); setPtoRequests(pto||[]);
+    setLoading(false);
   };
+
+  const loadDetail=async(empId,tsId)=>{
+    const {data:entries}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",tsId);
+    const {data:reports}=await supabase.from("daily_reports").select("*").eq("timesheet_id",tsId);
+    setDetail({empId,tsId,entries:entries||[],reports:reports||[]});
+    setSelected(empId);
+  };
+
+  const handleApprove=async(tsId)=>{
+    await supabase.from("timesheets").update({status:"approved",approved_at:new Date().toISOString()}).eq("id",tsId);
+    setStatus("✓ Timesheet approved!"); loadData();
+    exportTimesheets();
+  };
+
+  const handleReject=async(tsId)=>{
+    await supabase.from("timesheets").update({status:"rejected",rejected_at:new Date().toISOString(),rejection_note:rejectNote}).eq("id",tsId);
+    setShowReject(null); setRejectNote(""); setStatus("Timesheet sent back to employee."); loadData();
+  };
+
+  const handlePTO=async(id,approved)=>{
+    await supabase.from("pto_requests").update({status:approved?"approved":"rejected",reviewed_at:new Date().toISOString()}).eq("id",id);
+    loadData();
+  };
+
+  const exportTimesheets=()=>{
+    const submitted=timesheets.filter(t=>t.status==="submitted"||t.status==="approved");
+    if(!submitted.length){setStatus("No submitted timesheets to export.");return;}
+    let csv="";
+    submitted.forEach((ts,ei)=>{
+      if(ei>0)csv+="\n\n";
+      const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
+      const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+      csv+=`=== ${(emp.name||"").toUpperCase()} ===\n`;
+      csv+=`EMPLOYEE NO.,${emp.emp_no||"PENDING"},,,,,,,,EMPLOYEE NAME,${emp.name||""}\n`;
+      csv+=`WEEK/PERIOD ENDING,${weekEnd.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"})},,,,,,,,SUPERVISOR,${settings?.supervisor||"Daniel Hancock"}\n\n`;
+      csv+=`PROJECT #,TASK #,EXPENSE TYPE,PROJECT DESCRIPTION,`;
+      DAYS.forEach(d=>{csv+=`${d.toUpperCase()} REG,${d.toUpperCase()} OT,${d.toUpperCase()} DT,`;});
+      csv+=`TOTAL REG,TOTAL OT,TOTAL DT\n`;
+      csv+=`,,,,`;
+      DAYS.forEach((_,i)=>{csv+=`${excelDate(WS,i)},,,`;});
+      csv+=`,,\n`;
+      let gR=0,gO=0,gD=0;
+      projects.forEach(proj=>{
+        let rR=0,rO=0,rD=0;
+        csv+=`${proj.project_num},${proj.task_num},${proj.expense_type||""},"${proj.project_name||""}",`;
+        DAYS.forEach(day=>{
+          const e=detail?.entries?.find(e=>e.project_id===proj.id&&e.day_name===day);
+          const r=parseFloat(e?.reg_hours)||0,o=parseFloat(e?.ot_hours)||0,d=parseFloat(e?.dt_hours)||0;
+          csv+=`${r||""},${o||""},${d||""},`;
+          rR+=r;rO+=o;rD+=d;
+        });
+        gR+=rR;gO+=rO;gD+=rD;
+        csv+=`${rR},${rO},${rD}\n`;
+      });
+      csv+=`,,TOTALS,,`;
+      DAYS.forEach(()=>{csv+=`,,,`;});
+      csv+=`${gR},${gO},${gD}\n`;
+    });
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`BIS_Timesheets_${WEEK_KEY}.csv`;a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if(loading) return <div style={{textAlign:"center",padding:60,color:C.muted}}>Loading…</div>;
+
+  const submitted=timesheets.filter(t=>t.status==="submitted"||t.status==="approved");
+  const pending=employees.filter(e=>!timesheets.find(t=>t.employee_id===e.id&&(t.status==="submitted"||t.status==="approved")));
 
   return(
     <div style={{maxWidth:960,margin:"0 auto",position:"relative",zIndex:1}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28,flexWrap:"wrap",gap:12}}>
+      {showReject&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <Card style={{padding:24,width:"100%",maxWidth:400}}>
+            <h3 style={{margin:"0 0 14px",color:C.text}}>Reject Timesheet</h3>
+            <Textarea value={rejectNote} onChange={setRejectNote} placeholder="Reason for rejection (employee will see this)…" rows={3}/>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:14}}>
+              <Btn variant="ghost" small onClick={()=>setShowReject(null)}>Cancel</Btn>
+              <Btn variant="danger" small onClick={()=>handleReject(showReject)}>Send Back</Btn>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
-          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(weekStart)}</p>
+          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)}</p>
         </div>
-        <Badge color={submitted.length>0?"green":"amber"}>{submitted.length}/{employees.length} submitted</Badge>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <Badge color={submitted.length>0?"green":"amber"}>{submitted.length}/{employees.length} submitted</Badge>
+          {pending.length>0&&<Badge color="red">⚠ {pending.length} not submitted</Badge>}
+        </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:28}}>
-        {employees.map(emp=>{
-          const wd=data[emp.id]?.[weekKey];const sub=!!wd?._submitted;
-          const reg=sub?DAYS.reduce((s,d)=>s+(wd[d]?.entries||[]).reduce((ss,e)=>ss+(parseFloat(e.reg)||0),0),0):0;
-          const ot=sub?DAYS.reduce((s,d)=>s+(wd[d]?.entries||[]).reduce((ss,e)=>ss+(parseFloat(e.ot)||0),0),0):0;
-          const dt=sub?DAYS.reduce((s,d)=>s+(wd[d]?.entries||[]).reduce((ss,e)=>ss+(parseFloat(e.dt)||0),0),0):0;
-          return(
-            <div key={emp.id} onClick={()=>sub?setSelected(selected===emp.id?null:emp.id):null}
-              style={{background:C.card,border:`1px solid ${sub?C.accent:C.border}`,borderRadius:12,padding:16,cursor:sub?"pointer":"default",transition:"border-color .2s"}}>
-              <div style={{fontWeight:900,color:C.text,fontSize:14,marginBottom:2}}>{emp.name}</div>
-              <div style={{color:C.gold,fontSize:12,marginBottom:10}}>{emp.empNo||<span style={{color:C.amber}}>No Emp# yet</span>}</div>
-              {sub?<>
-                <Badge color="green">✓ Submitted</Badge>
-                <div style={{marginTop:10,fontSize:12,display:"flex",gap:10}}>
-                  <span style={{color:C.muted}}>REG <strong style={{color:C.text}}>{reg.toFixed(1)}</strong></span>
-                  <span style={{color:C.muted}}>OT <strong style={{color:C.amber}}>{ot.toFixed(1)}</strong></span>
-                  <span style={{color:C.muted}}>DT <strong style={{color:C.red}}>{dt.toFixed(1)}</strong></span>
-                </div>
-              </>:<Badge color="amber">Pending</Badge>}
+      {/* PTO Requests */}
+      {ptoRequests.length>0&&(
+        <Card style={{padding:20,marginBottom:24}}>
+          <SectionHead>📅 Pending Time Off Requests</SectionHead>
+          {ptoRequests.map(req=>(
+            <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap"}}>
+              <div>
+                <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
+                <span style={{color:C.gold,marginLeft:10,fontSize:13}}>{req.request_type}</span>
+                <span style={{color:C.muted,marginLeft:10,fontSize:13}}>{req.start_date} → {req.end_date}</span>
+                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="green" small onClick={()=>handlePTO(req.id,true)}>✓ Approve</Btn>
+                <Btn variant="danger" small onClick={()=>handlePTO(req.id,false)}>✕ Deny</Btn>
+              </div>
             </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Employee cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:24}}>
+        {employees.map(emp=>{
+          const ts=timesheets.find(t=>t.employee_id===emp.id);
+          const sub=ts&&(ts.status==="submitted"||ts.status==="approved");
+          return(
+            <Card key={emp.id} style={{padding:16,cursor:sub?"pointer":"default",border:`1px solid ${sub?C.accent:C.border}`}}
+              onClick={()=>sub&&(selected===emp.id?(setSelected(null),setDetail(null)):loadDetail(emp.id,ts.id))}>
+              <div style={{fontWeight:900,color:C.text,fontSize:14,marginBottom:2}}>{emp.name}</div>
+              <div style={{color:C.gold,fontSize:12,marginBottom:10}}>{emp.emp_no||"No Emp# yet"}</div>
+              {sub?<>
+                <Badge color={ts.status==="approved"?"green":"accent"}>{ts.status==="approved"?"✓ Approved":"Submitted"}</Badge>
+                {ts.status==="submitted"&&(
+                  <div style={{display:"flex",gap:8,marginTop:10}}>
+                    <Btn variant="green" small onClick={e=>{e.stopPropagation();handleApprove(ts.id);}}>Approve</Btn>
+                    <Btn variant="danger" small onClick={e=>{e.stopPropagation();setShowReject(ts.id);}}>Reject</Btn>
+                  </div>
+                )}
+              </>:<Badge color="amber">Pending</Badge>}
+            </Card>
           );
         })}
       </div>
 
-      {selected&&(()=>{
+      {/* Detail panel */}
+      {selected&&detail&&(()=>{
         const emp=employees.find(e=>e.id===selected);
-        const wd=data[emp.id][weekKey];
-        const empProjs=projects.filter(p=>emp.projects?.includes(p.id));
+        const ts=timesheets.find(t=>t.employee_id===selected);
         return(
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,marginBottom:24,padding:24}}>
-            <h3 style={{margin:"0 0 16px",color:C.text,fontWeight:900}}>{emp.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp.empNo}</span> — Detailed View</h3>
-            {DAYS.map((day,i)=>{
-              const d=wd[day];if(!d)return null;
-              const hasHours=d.entries?.some(e=>(parseFloat(e.reg)||0)+(parseFloat(e.ot)||0)+(parseFloat(e.dt)||0)>0);
-              if(!hasHours&&!d.report)return null;
+          <Card style={{marginBottom:24,padding:24}}>
+            <h3 style={{margin:"0 0 16px",color:C.text,fontWeight:900}}>{emp?.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp?.emp_no}</span></h3>
+            {DAYS.map(day=>{
+              const dayEntries=detail.entries.filter(e=>e.day_name===day);
+              const rep=detail.reports.find(r=>r.day_name===day);
+              const hasHours=dayEntries.some(e=>e.reg_hours||e.ot_hours||e.dt_hours);
+              if(!hasHours&&!rep?.report_text) return null;
               return(
-                <div key={day} style={{borderBottom:`1px solid ${C.border}`,paddingBottom:14,marginBottom:14}}>
-                  <div style={{fontWeight:700,color:C.accent,fontSize:13,marginBottom:6,display:"flex",justifyContent:"space-between"}}>
-                    <span>{day} · <span style={{color:C.muted,fontWeight:400}}>{dateOfDay(weekStart,i)}</span>{d.location&&<span style={{color:C.gold,marginLeft:10}}>📍{d.location}</span>}</span>
+                <div key={day} style={{borderBottom:`1px solid ${C.border}`,paddingBottom:12,marginBottom:12}}>
+                  <div style={{fontWeight:700,color:C.accent,fontSize:13,marginBottom:6}}>
+                    {day}{rep?.location&&<span style={{color:C.gold,marginLeft:10,fontSize:12}}>📍{rep.location}</span>}
                   </div>
-                  {empProjs.map(proj=>{
-                    const entry=d.entries?.find(e=>e.projectId===proj.id);
-                    const reg=parseFloat(entry?.reg)||0;const ot=parseFloat(entry?.ot)||0;const dt=parseFloat(entry?.dt)||0;
-                    if(!reg&&!ot&&!dt)return null;
+                  {dayEntries.filter(e=>e.reg_hours||e.ot_hours||e.dt_hours).map(e=>{
+                    const proj=projects.find(p=>p.id===e.project_id);
                     return(
-                      <div key={proj.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:C.text,padding:"3px 0"}}>
-                        <span style={{color:C.gold}}>{proj.projectName||proj.projectNum} <span style={{color:C.muted,fontSize:11}}>{proj.taskNum}</span></span>
-                        <span>REG <strong>{reg}</strong> · OT <strong style={{color:C.amber}}>{ot}</strong> · DT <strong style={{color:C.red}}>{dt}</strong></span>
+                      <div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:C.text,padding:"2px 0"}}>
+                        <span style={{color:C.gold}}>{proj?.project_name||proj?.project_num} <span style={{color:C.muted,fontSize:11}}>{proj?.task_num}</span></span>
+                        <span>REG <strong>{e.reg_hours}</strong> · OT <strong style={{color:C.amber}}>{e.ot_hours}</strong> · DT <strong style={{color:C.red}}>{e.dt_hours}</strong></span>
                       </div>
                     );
                   })}
-                  {d.notes&&<p style={{color:C.muted,fontSize:12,margin:"6px 0 0"}}>📝 {d.notes}</p>}
-                  {d.report&&<div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:13,color:C.text,borderLeft:`3px solid ${C.accent}`}}><span style={{color:C.accent,fontSize:11,fontWeight:700}}>DAILY REPORT · </span>{d.report}</div>}
+                  {rep?.notes&&<p style={{color:C.muted,fontSize:12,margin:"6px 0 0"}}>📝 {rep.notes}</p>}
+                  {rep?.report_text&&<div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:13,color:C.text,borderLeft:`3px solid ${C.accent}`}}><span style={{color:C.accent,fontSize:11,fontWeight:700}}>DAILY REPORT · </span>{rep.report_text}</div>}
                 </div>
               );
             })}
-          </div>
+          </Card>
         );
       })()}
 
+      {/* Export panel */}
       {submitted.length>0&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:24}}>
+        <Card style={{padding:24}}>
           <h3 style={{margin:"0 0 8px",color:C.text,fontSize:16,fontWeight:900}}>Export & Send</h3>
-          <p style={{color:C.muted,fontSize:12,marginBottom:20}}>Exports your company timesheet format (PROJECT DESCRIPTION column included) + Daily Report, one section per employee.</p>
+          <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Exports timesheet in your company format with PROJECT DESCRIPTION column.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-            <Btn variant="amber" onClick={()=>handleExport(false)} disabled={sending}>{sending?"Exporting…":"📧 Send to My Email for Review"}</Btn>
-            <Btn variant="primary" onClick={()=>handleExport(true)} disabled={sending}>{sending?"Exporting…":"✓ Approve & Send to Payroll"}</Btn>
+            <Btn variant="primary" onClick={exportTimesheets}>↓ Export Timesheets CSV</Btn>
           </div>
-          {status&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:8,background:status.startsWith("⚠")?C.amberDim:C.greenDim,color:status.startsWith("⚠")?C.amber:C.green,fontSize:13}}>{status}</div>}
+          {status&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:8,background:C.greenDim,color:C.green,fontSize:13}}>{status}</div>}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── Admin Console ─────────────────────────────────────────────────────────────
+function AdminConsole({employees,setEmployees,projects,setProjects,settings,setSettings,currentUser}) {
+  const [tab,setTab]=useState("team");
+  const [saved,setSaved]=useState("");
+  const [newEmpEmail,setNewEmpEmail]=useState("");
+  const [newEmpName,setNewEmpName]=useState("");
+  const [newEmpNo,setNewEmpNo]=useState("");
+  const [newEmpRole,setNewEmpRole]=useState("");
+  const [newProj,setNewProj]=useState({project_num:"",task_num:"",expense_type:"",ocip:"",project_name:""});
+  const [editEmp,setEditEmp]=useState(null);
+  const [editProj,setEditProj]=useState(null);
+  const [settingsForm,setSettingsForm]=useState({...settings,locations:(settings?.locations||DEFAULT_LOCATIONS)});
+  const [newLocation,setNewLocation]=useState("");
+  const [ptoAll,setPtoAll]=useState([]);
+
+  useEffect(()=>{ if(tab==="pto") loadPTO(); },[tab]);
+
+  const loadPTO=async()=>{
+    const {data}=await supabase.from("pto_requests").select("*,profiles(name)").order("created_at",{ascending:false}).limit(50);
+    setPtoAll(data||[]);
+  };
+
+  const flash=msg=>{setSaved(msg);setTimeout(()=>setSaved(""),2500);};
+
+  const inviteEmployee=async()=>{
+    if(!newEmpEmail.trim()||!newEmpName.trim()) return;
+    // Create user in Supabase auth via admin (we'll upsert profile; they sign up themselves)
+    // For now, create profile record — they'll link when they sign up with same email
+    const {data:existing}=await supabase.from("profiles").select("id").eq("email",newEmpEmail).single();
+    if(!existing){
+      await supabase.from("profiles").insert({id:uid(),name:newEmpName.trim(),emp_no:newEmpNo.trim(),role:newEmpRole.trim()||"employee",is_manager:false,email:newEmpEmail.trim()});
+    }
+    setNewEmpEmail("");setNewEmpName("");setNewEmpNo("");setNewEmpRole("");
+    flash("Employee added! They can sign up with that email.");
+    const {data}=await supabase.from("profiles").select("*");
+    setEmployees(data||[]);
+  };
+
+  const removeEmployee=async id=>{
+    if(!window.confirm("Remove this employee?")) return;
+    await supabase.from("profiles").delete().eq("id",id);
+    setEmployees(p=>p.filter(e=>e.id!==id));
+    flash("Employee removed.");
+  };
+
+  const saveEmpEdit=async()=>{
+    await supabase.from("profiles").update({name:editEmp.name,emp_no:editEmp.emp_no,role:editEmp.role,is_manager:editEmp.is_manager}).eq("id",editEmp.id);
+    setEmployees(p=>p.map(e=>e.id===editEmp.id?editEmp:e));
+    setEditEmp(null); flash("Employee updated!");
+  };
+
+  const toggleEmpProject=async(empId,projId,assigned)=>{
+    if(assigned){
+      await supabase.from("employee_projects").delete().eq("employee_id",empId).eq("project_id",projId);
+    } else {
+      await supabase.from("employee_projects").insert({employee_id:empId,project_id:projId});
+    }
+    const {data}=await supabase.from("projects").select("*,employee_projects(employee_id)");
+    setProjects((data||[]).map(p=>({...p,assigned:p.employee_projects?.some(ep=>ep.employee_id===currentUser?.id)})));
+  };
+
+  const addProject=async()=>{
+    if(!newProj.project_num.trim()) return;
+    const {data}=await supabase.from("projects").insert(newProj).select().single();
+    if(data){ setProjects(p=>[...p,{...data,assigned:true}]); setNewProj({project_num:"",task_num:"",expense_type:"",ocip:"",project_name:""}); flash("Project added!"); }
+  };
+
+  const removeProject=async id=>{
+    if(!window.confirm("Remove this project?")) return;
+    await supabase.from("projects").delete().eq("id",id);
+    setProjects(p=>p.filter(x=>x.id!==id)); flash("Project removed.");
+  };
+
+  const saveProjEdit=async()=>{
+    await supabase.from("projects").update(editProj).eq("id",editProj.id);
+    setProjects(p=>p.map(x=>x.id===editProj.id?{...x,...editProj}:x));
+    setEditProj(null); flash("Project updated!");
+  };
+
+  const saveSettings=async()=>{
+    const pairs=Object.entries(settingsForm).filter(([k])=>k!=="locations");
+    for(const [key,value] of pairs){
+      await supabase.from("app_settings").upsert({key,value:String(value)},{onConflict:"key"});
+    }
+    setSettings(settingsForm); flash("Settings saved!");
+  };
+
+  const addLocation=()=>{
+    if(!newLocation.trim()) return;
+    const locs=settingsForm.locations||DEFAULT_LOCATIONS;
+    if(!locs.includes(newLocation.trim())) setSettingsForm(p=>({...p,locations:[...locs,newLocation.trim()]}));
+    setNewLocation("");
+  };
+  const removeLocation=loc=>setSettingsForm(p=>({...p,locations:(p.locations||[]).filter(l=>l!==loc)}));
+
+  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"settings",label:"⚙ Settings"}];
+
+  return(
+    <div style={{maxWidth:960,margin:"0 auto",position:"relative",zIndex:1}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+        <div style={{width:40,height:40,background:`linear-gradient(135deg,${C.accent},${C.gold})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔧</div>
+        <div><h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Admin Console</h2><p style={{margin:0,color:C.muted,fontSize:13}}>Manage team, projects, locations & settings</p></div>
+        {saved&&<Badge color="green">✓ {saved}</Badge>}
+      </div>
+      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,marginBottom:24}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",borderBottom:`3px solid ${tab===t.id?C.accent:"transparent"}`,color:tab===t.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,padding:"12px 16px",transition:"color .15s"}}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* TEAM */}
+      {tab==="team"&&(
+        <div>
+          {employees.map(emp=>(
+            <Card key={emp.id} style={{marginBottom:10,overflow:"hidden"}}>
+              {editEmp?.id===emp.id?(
+                <div style={{padding:18}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>NAME</label><Input value={editEmp.name||""} onChange={v=>setEditEmp(p=>({...p,name:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMPLOYEE NO.</label><Input value={editEmp.emp_no||""} onChange={v=>setEditEmp(p=>({...p,emp_no:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>ROLE</label><Input value={editEmp.role||""} onChange={v=>setEditEmp(p=>({...p,role:v}))}/></div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:8}}>ASSIGNED PROJECTS</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {projects.map(proj=>{
+                        const assigned=proj.employee_projects?.some(ep=>ep.employee_id===emp.id);
+                        return <button key={proj.id} onClick={()=>toggleEmpProject(emp.id,proj.id,assigned)}
+                          style={{background:assigned?C.accentDim:"#0f0f0f",border:`1px solid ${assigned?C.accent:C.border}`,borderRadius:8,color:assigned?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontSize:12,padding:"5px 12px"}}>
+                          {assigned?"✓ ":""}{proj.project_name||proj.project_num}
+                        </button>;
+                      })}
+                    </div>
+                  </div>
+                  <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",marginBottom:12}}>
+                    <input type="checkbox" checked={!!editEmp.is_manager} onChange={e=>setEditEmp(p=>({...p,is_manager:e.target.checked}))} style={{width:16,height:16}}/>
+                    Manager access (can see all timesheets & approve)
+                  </label>
+                  <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveEmpEdit}>Save</Btn><Btn variant="ghost" small onClick={()=>setEditEmp(null)}>Cancel</Btn></div>
+                </div>
+              ):(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:38,height:38,background:C.accentDim,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,color:C.accent,fontSize:13}}>{(emp.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
+                    <div>
+                      <div style={{fontWeight:800,color:C.text,fontSize:14}}>{emp.name}</div>
+                      <div style={{color:C.muted,fontSize:12}}>{emp.role} · <span style={{color:emp.emp_no?C.gold:C.amber}}>{emp.emp_no||"No Emp# yet"}</span>{emp.is_manager&&<span style={{color:C.purple,marginLeft:8,fontSize:11}}>● Manager</span>}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8}}><Btn variant="ghost" small onClick={()=>setEditEmp({...emp})}>✏ Edit</Btn><Btn variant="danger" small onClick={()=>removeEmployee(emp.id)}>Remove</Btn></div>
+                </div>
+              )}
+            </Card>
+          ))}
+          <Card style={{padding:20,marginTop:8,border:`2px dashed ${C.border}`}}>
+            <SectionHead>Add Team Member</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>FULL NAME *</label><Input value={newEmpName} onChange={setNewEmpName} placeholder="First Last"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMAIL *</label><Input value={newEmpEmail} onChange={setNewEmpEmail} placeholder="email@company.com" type="email"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMPLOYEE NO.</label><Input value={newEmpNo} onChange={setNewEmpNo} placeholder="e.g. HAN4127"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>ROLE</label><Input value={newEmpRole} onChange={setNewEmpRole} placeholder="Team Member"/></div>
+            </div>
+            <Btn variant="primary" onClick={inviteEmployee} disabled={!newEmpName.trim()||!newEmpEmail.trim()}>+ Add Team Member</Btn>
+          </Card>
+        </div>
+      )}
+
+      {/* PROJECTS */}
+      {tab==="projects"&&(
+        <div>
+          {projects.map(proj=>(
+            <Card key={proj.id} style={{marginBottom:10,overflow:"hidden"}}>
+              {editProj?.id===proj.id?(
+                <div style={{padding:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT NAME</label><Input value={editProj.project_name||""} onChange={v=>setEditProj(p=>({...p,project_name:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT #</label><Input value={editProj.project_num||""} onChange={v=>setEditProj(p=>({...p,project_num:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TASK #</label><Input value={editProj.task_num||""} onChange={v=>setEditProj(p=>({...p,task_num:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EXPENSE TYPE</label><Input value={editProj.expense_type||""} onChange={v=>setEditProj(p=>({...p,expense_type:v}))}/></div>
+                    <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>OCIP</label><Input value={editProj.ocip||""} onChange={v=>setEditProj(p=>({...p,ocip:v}))}/></div>
+                  </div>
+                  <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveProjEdit}>Save</Btn><Btn variant="ghost" small onClick={()=>setEditProj(null)}>Cancel</Btn></div>
+                </div>
+              ):(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10}}>
+                  <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                    {proj.project_name&&<span style={{color:C.gold,fontWeight:800}}>{proj.project_name}</span>}
+                    <span style={{color:C.accent,fontWeight:700}}>{proj.project_num}</span>
+                    <span style={{color:C.muted,fontSize:12}}>Task: <strong style={{color:C.text}}>{proj.task_num}</strong></span>
+                    {proj.expense_type&&<span style={{color:C.muted,fontSize:12}}>Exp: <strong style={{color:C.text}}>{proj.expense_type}</strong></span>}
+                  </div>
+                  <div style={{display:"flex",gap:8}}><Btn variant="ghost" small onClick={()=>setEditProj({...proj})}>✏ Edit</Btn><Btn variant="danger" small onClick={()=>removeProject(proj.id)}>Remove</Btn></div>
+                </div>
+              )}
+            </Card>
+          ))}
+          <Card style={{padding:20,marginTop:8,border:`2px dashed ${C.border}`}}>
+            <SectionHead>Add New Project Code</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT NAME</label><Input value={newProj.project_name} onChange={v=>setNewProj(p=>({...p,project_name:v}))} placeholder="e.g. Q-Cells Ingot"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT # *</label><Input value={newProj.project_num} onChange={v=>setNewProj(p=>({...p,project_num:v}))} placeholder="10-11-6010"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TASK #</label><Input value={newProj.task_num} onChange={v=>setNewProj(p=>({...p,task_num:v}))} placeholder="OH"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EXPENSE TYPE</label><Input value={newProj.expense_type} onChange={v=>setNewProj(p=>({...p,expense_type:v}))} placeholder="486"/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>OCIP</label><Input value={newProj.ocip} onChange={v=>setNewProj(p=>({...p,ocip:v}))} placeholder="sm1 cusw"/></div>
+            </div>
+            <Btn variant="primary" onClick={addProject} disabled={!newProj.project_num.trim()}>+ Add Project</Btn>
+          </Card>
+        </div>
+      )}
+
+      {/* LOCATIONS */}
+      {tab==="locations"&&(
+        <div style={{maxWidth:500}}>
+          <Card style={{padding:20,marginBottom:16}}>
+            <SectionHead>Location List</SectionHead>
+            {(settingsForm.locations||DEFAULT_LOCATIONS).map(loc=>(
+              <div key={loc} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"#0f0f0f",borderRadius:8,marginBottom:8,border:`1px solid ${C.border}`}}>
+                <span style={{color:C.text,fontWeight:600}}>📍 {loc}</span>
+                <Btn variant="danger" small onClick={()=>removeLocation(loc)}>Remove</Btn>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:10,marginTop:14}}>
+              <Input value={newLocation} onChange={setNewLocation} placeholder="Add new location…" style={{flex:1}}/>
+              <Btn variant="primary" onClick={addLocation} disabled={!newLocation.trim()}>Add</Btn>
+            </div>
+          </Card>
+          <Btn variant="gold" onClick={saveSettings}>Save Locations</Btn>
+        </div>
+      )}
+
+      {/* PTO HISTORY */}
+      {tab==="pto"&&(
+        <Card style={{padding:20}}>
+          <SectionHead>All Time Off Requests</SectionHead>
+          {ptoAll.length===0&&<p style={{color:C.muted,fontSize:13}}>No requests yet.</p>}
+          {ptoAll.map(req=>(
+            <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap",fontSize:13}}>
+              <div>
+                <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
+                <span style={{color:C.gold,marginLeft:10}}>{req.request_type}</span>
+                <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
+                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
+              </div>
+              <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
+                {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
+              </Badge>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* SETTINGS */}
+      {tab==="settings"&&(
+        <div style={{maxWidth:560}}>
+          <Card style={{padding:24}}>
+            <SectionHead>Platform Settings</SectionHead>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>COMPANY NAME</label><Input value={settingsForm.company||""} onChange={v=>setSettingsForm(p=>({...p,company:v}))}/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>SUPERVISOR NAME</label><Input value={settingsForm.supervisor||""} onChange={v=>setSettingsForm(p=>({...p,supervisor:v}))}/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>MANAGER EMAIL</label><Input value={settingsForm.manager_email||""} onChange={v=>setSettingsForm(p=>({...p,manager_email:v}))}/></div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PAYROLL EMAIL</label><Input value={settingsForm.payroll_email||""} onChange={v=>setSettingsForm(p=>({...p,payroll_email:v}))}/></div>
+            </div>
+            <div style={{marginTop:20}}><Btn variant="primary" onClick={saveSettings}>Save Settings</Btn></div>
+          </Card>
         </div>
       )}
     </div>
   );
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
+// ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const stored=load();
-  const [settings,setSettings]   = useState(stored.settings   ||{company:"Beard Integrated Systems",supervisor:"Daniel Hancock",managerEmail:"",payrollEmail:"",ccEmail:"",locations:DEFAULT_LOCATIONS});
-  const [employees,setEmployees] = useState(stored.employees  ||DEFAULT_EMPLOYEES);
-  const [projects,setProjects]   = useState(stored.projects   ||DEFAULT_PROJECTS);
-  const [timesheetData,setTD]    = useState(stored.timesheetData||{});
-  const [reminderPrefs,setRP]    = useState(stored.reminderPrefs||{});
-  const [view,setView]           = useState("manager");
-  const weekStart=WEEK_START;
-  const weekKey=weekStart.toISOString().slice(0,10);
+  const [user,setUser]=useState(null);
+  const [profile,setProfile]=useState(null);
+  const [employees,setEmployees]=useState([]);
+  const [projects,setProjects]=useState([]);
+  const [settings,setSettings]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState("timesheet");
 
-  useEffect(()=>{ save({settings,employees,projects,timesheetData,reminderPrefs}); },[settings,employees,projects,timesheetData,reminderPrefs]);
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{ if(session?.user) handleLogin(session.user); else setLoading(false); });
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{ if(session?.user) handleLogin(session.user); else { setUser(null); setProfile(null); setLoading(false); } });
+    return ()=>subscription.unsubscribe();
+  },[]);
 
-  const saveEntry=(empId,wk,dd)=>setTD(p=>({...p,[empId]:{...(p[empId]||{}),[wk]:dd}}));
-  const saveReminder=(empId,prefs)=>setRP(p=>({...p,[empId]:prefs}));
-  const handleApprove=(wk,ids)=>setTD(p=>{const n={...p};ids.forEach(id=>{if(n[id]?.[wk])n[id][wk]._approved=true;});return n;});
+  const handleLogin=async(u)=>{
+    setUser(u);
+    // Load or create profile
+    let {data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();
+    if(!prof){
+      const name=u.user_metadata?.name||u.email?.split("@")[0]||"User";
+      const {data:newProf}=await supabase.from("profiles").insert({id:u.id,name,email:u.email,role:"employee",is_manager:false}).select().single();
+      prof=newProf;
+    }
+    setProfile(prof);
+    // Load all data
+    const {data:emps}=await supabase.from("profiles").select("*").order("name");
+    const {data:projs}=await supabase.from("projects").select("*,employee_projects(employee_id)").order("project_num");
+    const {data:setts}=await supabase.from("app_settings").select("*");
+    setEmployees(emps||[]);
+    setProjects((projs||[]).map(p=>({...p,assigned:p.employee_projects?.some(ep=>ep.employee_id===u.id)})));
+    const settObj={locations:DEFAULT_LOCATIONS};
+    (setts||[]).forEach(s=>{settObj[s.key]=s.value;});
+    setSettings(settObj);
+    setLoading(false);
+  };
 
-  const submittedCount=employees.filter(e=>timesheetData[e.id]?.[weekKey]?._submitted).length;
+  const handleSignOut=async()=>{
+    await supabase.auth.signOut();
+    setUser(null); setProfile(null);
+  };
+
+  if(loading) return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+      <BeardCanvas/>
+      <div style={{position:"relative",zIndex:1,textAlign:"center",color:C.muted}}>
+        <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,#8b0000,#c0392b)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+          <span style={{fontWeight:900,fontSize:20,color:C.white}}>B</span>
+        </div>
+        Loading…
+      </div>
+    </div>
+  );
+
+  if(!user||!profile) return <LoginScreen onLogin={handleLogin}/>;
+
+  const isManager=profile.is_manager;
+  const myProjects=projects.filter(p=>p.assigned||p.employee_projects?.some(ep=>ep.employee_id===profile.id));
 
   const navTabs=[
-    {id:"manager",label:"📋 Manager",badge:submittedCount>0?`${submittedCount} ready`:null},
-    {id:"admin",label:"🔧 Admin",badge:null},
-    ...employees.map(e=>({id:e.id,label:`👤 ${e.name.split(" ")[0]}`})),
+    {id:"timesheet",label:"⏱ My Timesheet"},
+    ...(isManager?[{id:"manager",label:"📋 Manager Review"},{id:"admin",label:"🔧 Admin"}]:[]),
   ];
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'DM Sans',system-ui,sans-serif",color:C.text,position:"relative"}}>
       <BeardCanvas/>
-
       {/* Header */}
-      <div style={{background:"rgba(10,10,10,0.95)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(10px)"}}>
-        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:64}}>
+      <div style={{background:"rgba(26,16,16,0.96)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(10px)"}}>
+        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,position:"relative"}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            {/* Beard Logo */}
             <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(135deg,#8b0000,#c0392b)",display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #c0392b44",boxShadow:"0 0 16px rgba(192,57,43,0.3)"}}>
-              <span style={{fontWeight:900,fontSize:16,color:C.white,letterSpacing:1}}>B</span>
+              <span style={{fontWeight:900,fontSize:16,color:C.white}}>B</span>
             </div>
             <div>
               <div style={{display:"flex",alignItems:"baseline",gap:6}}>
@@ -827,25 +1064,27 @@ export default function App() {
               <div style={{color:C.muted,fontSize:10,letterSpacing:2,textTransform:"uppercase",marginTop:-1}}>1% better every day</div>
             </div>
           </div>
-          {/* Center — VDC Department */}
           <div style={{position:"absolute",left:"50%",transform:"translateX(-50%)",textAlign:"center"}}>
             <div style={{fontWeight:900,fontSize:13,color:C.text,letterSpacing:3,textTransform:"uppercase"}}>VDC Department</div>
             <div style={{color:C.accent,fontSize:9,letterSpacing:3,textTransform:"uppercase",marginTop:1}}>Timesheet Platform</div>
           </div>
-          <div style={{color:C.muted,fontSize:12,letterSpacing:1,visibility:"hidden"}}>Timesheet Platform</div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{textAlign:"right"}}>
+              <div style={{color:C.text,fontSize:13,fontWeight:700}}>{profile.name}</div>
+              <div style={{color:C.muted,fontSize:11}}>{isManager?"Manager":"Employee"}</div>
+            </div>
+            <Btn variant="ghost" small onClick={handleSignOut}>Sign Out</Btn>
+          </div>
         </div>
       </div>
 
       {/* Nav */}
-      <div style={{background:"rgba(10,10,10,0.9)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
+      <div style={{background:"rgba(26,16,16,0.92)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
         <div style={{maxWidth:1100,margin:"0 auto",display:"flex",gap:0,overflowX:"auto"}}>
           {navTabs.map(tab=>(
             <button key={tab.id} onClick={()=>setView(tab.id)}
-              style={{background:"none",border:"none",borderBottom:`3px solid ${view===tab.id?C.accent:"transparent"}`,
-                color:view===tab.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",
-                fontWeight:700,fontSize:13,padding:"14px 18px",whiteSpace:"nowrap",
-                letterSpacing:.3,transition:"color .15s",display:"flex",alignItems:"center",gap:7}}>
-              {tab.label}{tab.badge&&<Badge color="accent">{tab.badge}</Badge>}
+              style={{background:"none",border:"none",borderBottom:`3px solid ${view===tab.id?C.accent:"transparent"}`,color:view===tab.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,padding:"14px 18px",whiteSpace:"nowrap",letterSpacing:.3,transition:"color .15s"}}>
+              {tab.label}
             </button>
           ))}
         </div>
@@ -853,9 +1092,9 @@ export default function App() {
 
       {/* Content */}
       <div style={{padding:"32px 24px",maxWidth:1100,margin:"0 auto"}}>
-        {view==="manager"&&<ManagerView employees={employees} weekStart={weekStart} data={timesheetData} settings={settings} projects={projects} onApprove={handleApprove}/>}
-        {view==="admin"&&<AdminConsole employees={employees} setEmployees={setEmployees} projects={projects} setProjects={setProjects} settings={settings} setSettings={setSettings}/>}
-        {employees.find(e=>e.id===view)&&<EmployeeView employee={employees.find(e=>e.id===view)} weekStart={weekStart} data={timesheetData} onSave={saveEntry} reminderPrefs={reminderPrefs} onSaveReminder={saveReminder} projects={projects} settings={settings}/>}
+        {view==="timesheet"&&<EmployeeView profile={profile} projects={myProjects} settings={settings}/>}
+        {view==="manager"&&isManager&&<ManagerView employees={employees} projects={projects} settings={settings}/>}
+        {view==="admin"&&isManager&&<AdminConsole employees={employees} setEmployees={setEmployees} projects={projects} setProjects={setProjects} settings={settings} setSettings={setSettings} currentUser={profile}/>}
       </div>
     </div>
   );
