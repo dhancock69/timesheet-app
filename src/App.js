@@ -119,40 +119,83 @@ function Select({value,onChange,children,style={}}) {
   </select>;
 }
 
-// ── Background canvas with watermark ─────────────────────────────────────────
+// ── Background canvas with rotating BIM slideshow ────────────────────────────
+const BIM_IMAGES = [
+  "/bim-bg.png",
+  "/bim-bg-2.png",
+  "/bim-bg-3.png",
+  "/bim-bg-4.png",
+  "/bim-bg-5.png",
+  "/bim-bg-6.png",
+  "/bim-bg-7.png",
+];
+const FADE_DURATION = 2000;  // ms for crossfade
+const HOLD_DURATION = 7000;  // ms each image is shown
+
 function BeardCanvas() {
-  const rows = [
-    // Each row: [text, verticalOffset, color, size]
-    ['BEARD "ONE"', 0,  "rgba(220,80,60,0.20)",  12],
-    ['1% BETTER EVERY DAY', 8, "rgba(240,220,210,0.13)", 10],
-    ['BEARD "ONE"', -6, "rgba(220,80,60,0.16)",  10],
-    ['1% BETTER EVERY DAY', 4, "rgba(240,220,210,0.10)", 11],
-    ['BEARD "ONE"', 10, "rgba(220,80,60,0.18)",  11],
-    ['1% BETTER EVERY DAY', -4,"rgba(240,220,210,0.12)", 10],
-  ];
+  // Start at a random image each session
+  const [current, setCurrent] = useState(() => Math.floor(Math.random() * BIM_IMAGES.length));
+  const [next, setNext]       = useState(null);
+  const [fading, setFading]   = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const nextIdx = (current + 1) % BIM_IMAGES.length;
+      setNext(nextIdx);
+      setFading(true);
+      setTimeout(() => {
+        setCurrent(nextIdx);
+        setNext(null);
+        setFading(false);
+      }, FADE_DURATION);
+    }, HOLD_DURATION);
+    return () => clearInterval(interval);
+  }, [current]);
+
+  // Watermark grid — diagonal checkerboard, per-column stagger
+  const COLS = 6, ROWS = 14;
+  const items = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const isBeard = (r + c) % 2 === 0;
+      const colOffset = [0, 22, -14, 30, -8, 18][c % 6];
+      const depth = (r + c) % 3;
+      const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.09,0.11][depth];
+      const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
+      items.push({ text: isBeard ? 'BEARD "ONE"' : '1% BETTER EVERY DAY', opacity, size, colOffset, isBeard });
+    }
+  }
+
+  const imgStyle = {
+    position:"absolute", inset:0, backgroundSize:"cover", backgroundPosition:"center",
+    filter:"grayscale(60%) sepia(30%)",
+  };
+
   return (
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-      {/* BIM image watermark */}
-      <div style={{position:"absolute",inset:0,backgroundImage:`url('/bim-bg.png')`,backgroundSize:"cover",backgroundPosition:"center",opacity:.18,filter:"grayscale(60%) sepia(30%)"}}/>
-      {/* Subtle red overlay to tint the image */}
+      {/* Current image */}
+      <div style={{...imgStyle, backgroundImage:`url('${BIM_IMAGES[current]}')`, opacity:.18, transition:"none"}}/>
+      {/* Next image fading in */}
+      {next !== null && (
+        <div style={{...imgStyle, backgroundImage:`url('${BIM_IMAGES[next]}')`, opacity: fading ? .18 : 0,
+          transition:`opacity ${FADE_DURATION}ms ease-in-out`}}/>
+      )}
+      {/* Subtle red overlay */}
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
-      {/* Staggered dotted text watermark */}
-      <div style={{position:"absolute",inset:0,display:"flex",flexWrap:"wrap",alignContent:"flex-start",padding:40,gap:0}}>
-        {Array.from({length:120}).map((_,i)=>{
-          const [text, vOffset, color, size] = rows[i % rows.length];
-          return (
-            <span key={i} style={{
-              color, fontSize:size, fontWeight:900, letterSpacing:2,
-              textTransform:"uppercase", whiteSpace:"nowrap",
-              padding:"16px 24px",
-              position:"relative", top: vOffset,
-            }}>
-              {text}
-            </span>
-          );
-        })}
+      {/* Diagonal alternating watermark */}
+      <div style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:`repeat(${COLS}, 1fr)`,alignContent:"start",padding:"30px 20px",gap:0}}>
+        {items.map((item,i)=>(
+          <span key={i} style={{
+            color: item.isBeard ? `rgba(220,80,60,${item.opacity})` : `rgba(240,220,210,${item.opacity})`,
+            fontSize:item.size, fontWeight:900, letterSpacing:2,
+            textTransform:"uppercase", whiteSpace:"nowrap",
+            padding:"14px 8px", position:"relative", top:item.colOffset, display:"block",
+          }}>
+            {item.text}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -763,34 +806,4 @@ export default function App() {
                 <span style={{fontWeight:900,fontSize:17,color:C.white,letterSpacing:2,textTransform:"uppercase"}}>BEARD</span>
                 <span style={{fontWeight:900,fontSize:17,color:C.accent,letterSpacing:2,textTransform:"uppercase"}}>"ONE"</span>
               </div>
-              <div style={{color:C.muted,fontSize:10,letterSpacing:2,textTransform:"uppercase",marginTop:-1}}>1% better every day</div>
-            </div>
-          </div>
-          <div style={{color:C.muted,fontSize:12,letterSpacing:1}}>Timesheet Platform</div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <div style={{background:"rgba(10,10,10,0.9)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
-        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",gap:0,overflowX:"auto"}}>
-          {navTabs.map(tab=>(
-            <button key={tab.id} onClick={()=>setView(tab.id)}
-              style={{background:"none",border:"none",borderBottom:`3px solid ${view===tab.id?C.accent:"transparent"}`,
-                color:view===tab.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",
-                fontWeight:700,fontSize:13,padding:"14px 18px",whiteSpace:"nowrap",
-                letterSpacing:.3,transition:"color .15s",display:"flex",alignItems:"center",gap:7}}>
-              {tab.label}{tab.badge&&<Badge color="accent">{tab.badge}</Badge>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div style={{padding:"32px 24px",maxWidth:1100,margin:"0 auto"}}>
-        {view==="manager"&&<ManagerView employees={employees} weekStart={weekStart} data={timesheetData} settings={settings} projects={projects} onApprove={handleApprove}/>}
-        {view==="admin"&&<AdminConsole employees={employees} setEmployees={setEmployees} projects={projects} setProjects={setProjects} settings={settings} setSettings={setSettings}/>}
-        {employees.find(e=>e.id===view)&&<EmployeeView employee={employees.find(e=>e.id===view)} weekStart={weekStart} data={timesheetData} onSave={saveEntry} reminderPrefs={reminderPrefs} onSaveReminder={saveReminder} projects={projects} settings={settings}/>}
-      </div>
-    </div>
-  );
-}
+     
