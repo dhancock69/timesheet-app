@@ -152,18 +152,23 @@ function BeardCanvas() {
     return () => clearInterval(interval);
   }, [current]);
 
-  // Watermark grid — diagonal checkerboard, per-column stagger
-  const COLS = 6, ROWS = 14;
+  // Smooth diagonal flowing scatter — each item positioned absolutely
+  // using a diagonal wave pattern so text flows naturally across the canvas
   const items = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const isBeard = (r + c) % 2 === 0;
-      const colOffset = [0, 22, -14, 30, -8, 18][c % 6];
-      const depth = (r + c) % 3;
-      const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.09,0.11][depth];
-      const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
-      items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, colOffset, isBeard });
-    }
+  const totalItems = 80;
+  for (let i = 0; i < totalItems; i++) {
+    const isBeard = i % 2 === 0;
+    // Spread across full width in columns, with diagonal offset per row
+    const col = i % 8;
+    const row = Math.floor(i / 8);
+    // Diagonal wave: each column is offset downward, creating a flowing diagonal
+    const leftPct  = (col / 8) * 105 - 2;
+    const topPct   = (row / 10) * 110 - 2 + (col * 5.5);
+    // Slight size/opacity variation for depth
+    const depth    = (i % 3);
+    const opacity  = isBeard ? [0.20, 0.13, 0.17][depth] : [0.12, 0.08, 0.10][depth];
+    const size     = isBeard ? [12, 10, 11][depth]        : [10,  9,  10][depth];
+    items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, leftPct, topPct, isBeard });
   }
 
   const imgStyle = {
@@ -184,14 +189,20 @@ function BeardCanvas() {
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
-      {/* Diagonal alternating watermark */}
-      <div style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:`repeat(${COLS}, 1fr)`,alignContent:"start",padding:"30px 20px",gap:0}}>
+      {/* Diagonal flowing scatter watermark */}
+      <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
         {items.map((item,i)=>(
           <span key={i} style={{
+            position:"absolute",
+            left:`${item.leftPct}%`,
+            top:`${item.topPct}%`,
             color: item.isBeard ? `rgba(220,80,60,${item.opacity})` : `rgba(240,220,210,${item.opacity})`,
-            fontSize:item.size, fontWeight:900, letterSpacing:2,
-            textTransform:"uppercase", whiteSpace:"nowrap",
-            padding:"14px 8px", position:"relative", top:item.colOffset, display:"block",
+            fontSize: item.size,
+            fontWeight: 900,
+            letterSpacing: 2,
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+            transform: "rotate(-8deg)",
           }}>
             {item.text}
           </span>
