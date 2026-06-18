@@ -162,7 +162,7 @@ function BeardCanvas() {
       const depth = (r + c) % 3;
       const opacity = isBeard ? [0.22,0.14,0.18][depth] : [0.13,0.09,0.11][depth];
       const size    = isBeard ? [12,10,11][depth]        : [10,9,10][depth];
-      items.push({ text: isBeard ? 'BEARD "ONE"' : '1% BETTER EVERY DAY', opacity, size, colOffset, isBeard });
+      items.push({ text: isBeard ? 'BEARD \u201CONE\u201D' : '1% BETTER EVERY DAY', opacity, size, colOffset, isBeard });
     }
   }
 
@@ -804,6 +804,36 @@ export default function App() {
             <div>
               <div style={{display:"flex",alignItems:"baseline",gap:6}}>
                 <span style={{fontWeight:900,fontSize:17,color:C.white,letterSpacing:2,textTransform:"uppercase"}}>BEARD</span>
-                <span style={{fontWeight:900,fontSize:17,color:C.accent,letterSpacing:2,textTransform:"uppercase"}}>"ONE"</span>
+                <span style={{fontWeight:900,fontSize:17,color:C.accent,letterSpacing:2,textTransform:"uppercase"}}>&ldquo;ONE&rdquo;</span>
               </div>
-     
+              <div style={{color:C.muted,fontSize:10,letterSpacing:2,textTransform:"uppercase",marginTop:-1}}>1% better every day</div>
+            </div>
+          </div>
+          <div style={{color:C.muted,fontSize:12,letterSpacing:1}}>Timesheet Platform</div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <div style={{background:"rgba(10,10,10,0.9)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
+        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",gap:0,overflowX:"auto"}}>
+          {navTabs.map(tab=>(
+            <button key={tab.id} onClick={()=>setView(tab.id)}
+              style={{background:"none",border:"none",borderBottom:`3px solid ${view===tab.id?C.accent:"transparent"}`,
+                color:view===tab.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",
+                fontWeight:700,fontSize:13,padding:"14px 18px",whiteSpace:"nowrap",
+                letterSpacing:.3,transition:"color .15s",display:"flex",alignItems:"center",gap:7}}>
+              {tab.label}{tab.badge&&<Badge color="accent">{tab.badge}</Badge>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{padding:"32px 24px",maxWidth:1100,margin:"0 auto"}}>
+        {view==="manager"&&<ManagerView employees={employees} weekStart={weekStart} data={timesheetData} settings={settings} projects={projects} onApprove={handleApprove}/>}
+        {view==="admin"&&<AdminConsole employees={employees} setEmployees={setEmployees} projects={projects} setProjects={setProjects} settings={settings} setSettings={setSettings}/>}
+        {employees.find(e=>e.id===view)&&<EmployeeView employee={employees.find(e=>e.id===view)} weekStart={weekStart} data={timesheetData} onSave={saveEntry} reminderPrefs={reminderPrefs} onSaveReminder={saveReminder} projects={projects} settings={settings}/>}
+      </div>
+    </div>
+  );
+}
