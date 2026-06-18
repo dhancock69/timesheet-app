@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 // ── Beard Brand Colors ────────────────────────────────────────────────────────
 const C = {
-  bg: "#0a0a0a", surface: "#111111", card: "#1a1a1a", border: "#2a2020",
+  bg: "#1a1010", surface: "#241818", card: "#2e1e1e", border: "#3a2525",
   accent: "#c0392b", accentDim: "#3d0f0a", accentHover: "#e74c3c",
   green: "#2dd4a0", greenDim: "#0d3d2e",
   amber: "#f5a623", amberDim: "#3d2800",
@@ -125,13 +125,15 @@ function BeardCanvas() {
   return (
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
       {/* BIM image watermark */}
-      <div style={{position:"absolute",inset:0,backgroundImage:`url('/bim-bg.png')`,backgroundSize:"cover",backgroundPosition:"center",opacity:.04,filter:"grayscale(100%) sepia(20%)"}}/>
+      <div style={{position:"absolute",inset:0,backgroundImage:`url('/bim-bg.png')`,backgroundSize:"cover",backgroundPosition:"center",opacity:.18,filter:"grayscale(60%) sepia(30%)"}}/>
+      {/* Subtle red overlay to tint the image */}
+      <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       {/* Red vignette */}
-      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 40%, rgba(80,10,5,0.3) 100%)"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center, transparent 30%, rgba(80,10,5,0.25) 100%)"}}/>
       {/* Dotted text watermark */}
       <div style={{position:"absolute",inset:0,display:"flex",flexWrap:"wrap",alignContent:"flex-start",padding:40,gap:0}}>
         {Array.from({length:120}).map((_,i)=>(
-          <span key={i} style={{color:i%2===0?"rgba(192,57,43,0.07)":"rgba(240,236,232,0.04)",fontSize:i%3===0?11:9,fontWeight:900,letterSpacing:2,textTransform:"uppercase",padding:"18px 28px",whiteSpace:"nowrap"}}>
+          <span key={i} style={{color:i%2===0?"rgba(220,80,60,0.18)":"rgba(240,220,210,0.11)",fontSize:i%3===0?12:10,fontWeight:900,letterSpacing:2,textTransform:"uppercase",padding:"18px 28px",whiteSpace:"nowrap"}}>
             {phrases[i%phrases.length]}
           </span>
         ))}
