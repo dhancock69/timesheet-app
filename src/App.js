@@ -225,7 +225,7 @@ function LoginScreen({onLogin}) {
                   onFocus={e=>{e.target.style.borderColor=C.accent;}} onBlur={e=>{e.target.style.borderColor=C.border;}}/>
                 <button onClick={()=>setShowPw(v=>!v)} type="button"
                   style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:16,padding:"0 2px",lineHeight:1}}>
-                  {showPw?"🙈":"👁"}
+                  {showPw?"Hide":"Show"}
                 </button>
               </div></div>
             )}
@@ -1102,23 +1102,29 @@ export default function App() {
 
   const handleLogin=async(u)=>{
     setUser(u);
-    // Load or create profile
-    let {data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();
-    if(!prof){
-      const name=u.user_metadata?.name||u.email?.split("@")[0]||"User";
-      const {data:newProf}=await supabase.from("profiles").insert({id:u.id,name,email:u.email,role:"employee",is_manager:false}).select().single();
-      prof=newProf;
+    try {
+      // Load or create profile
+      let {data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();
+      if(!prof){
+        const name=u.user_metadata?.name||u.email?.split("@")[0]||"User";
+        const {data:newProf}=await supabase.from("profiles").insert({id:u.id,name,email:u.email,role:"employee",is_manager:false}).select().single();
+        prof=newProf||{id:u.id,name:u.user_metadata?.name||"User",email:u.email,is_manager:false,role:"employee"};
+      }
+      setProfile(prof);
+      // Load all data with error handling
+      const [{data:emps},{data:projs},{data:setts}]=await Promise.all([
+        supabase.from("profiles").select("*").order("name"),
+        supabase.from("projects").select("*,employee_projects(employee_id)").order("project_num"),
+        supabase.from("app_settings").select("*"),
+      ]);
+      setEmployees(emps||[]);
+      setProjects((projs||[]).map(p=>({...p,assigned:p.employee_projects?.some(ep=>ep.employee_id===u.id)})));
+      const settObj={locations:DEFAULT_LOCATIONS};
+      (setts||[]).forEach(s=>{settObj[s.key]=s.value;});
+      setSettings(settObj);
+    } catch(err) {
+      console.error("Login data load error:",err);
     }
-    setProfile(prof);
-    // Load all data
-    const {data:emps}=await supabase.from("profiles").select("*").order("name");
-    const {data:projs}=await supabase.from("projects").select("*,employee_projects(employee_id)").order("project_num");
-    const {data:setts}=await supabase.from("app_settings").select("*");
-    setEmployees(emps||[]);
-    setProjects((projs||[]).map(p=>({...p,assigned:p.employee_projects?.some(ep=>ep.employee_id===u.id)})));
-    const settObj={locations:DEFAULT_LOCATIONS};
-    (setts||[]).forEach(s=>{settObj[s.key]=s.value;});
-    setSettings(settObj);
     setLoading(false);
   };
 
