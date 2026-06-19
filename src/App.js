@@ -55,18 +55,27 @@ function BeardCanvas() {
     },HOLD_MS);
     return ()=>clearInterval(iv);
   },[current]);
-  const COLS=6,ROWS=14,cW=100/COLS,cH=100/ROWS;
+
+  // Diagonal stripe pattern — alternates within each row AND between rows
   const items=[];
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) {
-    const isB=(r+c)%2===0;
-    const seed=r*31+c*17;
-    const nX=((seed*13+7)%21)-10, nY=((seed*19+11)%17)-8;
-    const lp=c*cW+cW*.5+nX*.35, tp=r*cH+cH*.5+nY*.35;
-    const depth=(r+c)%3;
-    const op=isB?[.22,.14,.18][depth]:[.13,.08,.11][depth];
-    const sz=isB?[12,10,11][depth]:[10,9,10][depth];
-    items.push({text:isB?'BEARD \u201CONE\u201D':'1% BETTER EVERY DAY',op,sz,lp,tp,isB});
+  const stripeSpacingY=80, angleOffset=0.4;
+  const canvasW=1600, canvasH=1100;
+  let stripeIdx=0;
+  for(let y=-100;y<canvasH+100;y+=stripeSpacingY){
+    const rowIsBeardFirst=stripeIdx%2===0;
+    const depth=stripeIdx%3;
+    let itemIdx=0;
+    for(let x=-200;x<canvasW+200;x+=220){
+      const isBeard=rowIsBeardFirst?itemIdx%2===0:itemIdx%2!==0;
+      const opacity=isBeard?[0.22,0.15,0.19][depth]:[0.13,0.08,0.11][depth];
+      const size=isBeard?[12,10,11][depth]:[10,9,10][depth];
+      const px=x+(y*angleOffset);
+      items.push({text:isBeard?'BEARD \u201CONE\u201D':'1% BETTER EVERY DAY',opacity,size,px,py:y,isBeard});
+      itemIdx++;
+    }
+    stripeIdx++;
   }
+
   const imgBase={position:"absolute",inset:0,backgroundSize:"cover",backgroundPosition:"center",filter:"grayscale(60%) sepia(30%)",transition:`opacity ${FADE_MS}ms ease-in-out`};
   return(
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
@@ -78,9 +87,14 @@ function BeardCanvas() {
       <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center,transparent 30%,rgba(80,10,5,0.25) 100%)"}}/>
       <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
-        {items.map((it,i)=>(
-          <span key={i} style={{position:"absolute",left:`${it.lp}%`,top:`${it.tp}%`,transform:"translate(-50%,-50%)",color:it.isB?`rgba(220,80,60,${it.op})`:`rgba(240,220,210,${it.op})`,fontSize:it.sz,fontWeight:900,letterSpacing:2,textTransform:"uppercase",whiteSpace:"nowrap"}}>
-            {it.text}
+        {items.map((item,i)=>(
+          <span key={i} style={{
+            position:"absolute", left:item.px, top:item.py,
+            color:item.isBeard?`rgba(220,80,60,${item.opacity})`:`rgba(240,220,210,${item.opacity})`,
+            fontSize:item.size, fontWeight:900, letterSpacing:2,
+            textTransform:"uppercase", whiteSpace:"nowrap", userSelect:"none",
+          }}>
+            {item.text}
           </span>
         ))}
       </div>
@@ -129,6 +143,7 @@ function LoginScreen({onLogin}) {
   const [mode,setMode]=useState("login");
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
+  const [showPw,setShowPw]=useState(false);
   const [name,setName]=useState("");
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
@@ -137,7 +152,14 @@ function LoginScreen({onLogin}) {
   const handleLogin=async()=>{
     setLoading(true); setError("");
     const {data,error:e}=await supabase.auth.signInWithPassword({email,password});
-    if(e){setError(e.message);setLoading(false);return;}
+    if(e){
+      if(e.message?.includes("fetch")||e.message?.includes("network")){
+        setError("Connection error — please check your internet and try again.");
+      } else {
+        setError(e.message);
+      }
+      setLoading(false);return;
+    }
     onLogin(data.user);
     setLoading(false);
   };
@@ -197,7 +219,15 @@ function LoginScreen({onLogin}) {
             <Input value={email} onChange={setEmail} placeholder="you@beardintegrated.com" type="email"/></div>
             {mode!=="forgot"&&(
               <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PASSWORD</label>
-              <Input value={password} onChange={setPassword} placeholder="••••••••" type="password"/></div>
+              <div style={{position:"relative"}}>
+                <input type={showPw?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
+                  style={{background:"#0f0f0f",border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontFamily:"inherit",fontSize:13,padding:"8px 40px 8px 12px",outline:"none",width:"100%",boxSizing:"border-box"}}
+                  onFocus={e=>{e.target.style.borderColor=C.accent;}} onBlur={e=>{e.target.style.borderColor=C.border;}}/>
+                <button onClick={()=>setShowPw(v=>!v)} type="button"
+                  style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:16,padding:"0 2px",lineHeight:1}}>
+                  {showPw?"🙈":"👁"}
+                </button>
+              </div></div>
             )}
           </div>
 
