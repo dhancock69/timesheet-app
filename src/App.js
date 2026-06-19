@@ -1093,6 +1093,7 @@ export default function App() {
   const [settings,setSettings]=useState({});
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState("timesheet");
+  const [appError,setAppError]=useState(null);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{ if(session?.user) handleLogin(session.user); else setLoading(false); });
@@ -1124,6 +1125,7 @@ export default function App() {
       setSettings(settObj);
     } catch(err) {
       console.error("Login data load error:",err);
+      setAppError(err?.message||"Unknown error loading app data. Please refresh and try again.");
     }
     setLoading(false);
   };
@@ -1141,6 +1143,20 @@ export default function App() {
           <span style={{fontWeight:900,fontSize:20,color:C.white}}>B</span>
         </div>
         Loading…
+      </div>
+    </div>
+  );
+
+  if(appError) return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif",padding:24}}>
+      <BeardCanvas/>
+      <div style={{position:"relative",zIndex:1,textAlign:"center",maxWidth:500}}>
+        <div style={{background:C.redDim,border:`1px solid ${C.red}`,borderRadius:14,padding:28,marginBottom:20}}>
+          <div style={{color:C.red,fontWeight:800,fontSize:16,marginBottom:10}}>⚠ App Error</div>
+          <div style={{color:C.text,fontSize:13,lineHeight:1.6,marginBottom:16}}>{appError}</div>
+          <div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 14px",fontSize:11,color:C.muted,textAlign:"left",fontFamily:"monospace",wordBreak:"break-all"}}>{appError}</div>
+        </div>
+        <Btn variant="primary" onClick={()=>{setAppError(null);setLoading(false);setUser(null);setProfile(null);}}>← Back to Login</Btn>
       </div>
     </div>
   );
