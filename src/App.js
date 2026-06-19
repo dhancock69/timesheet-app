@@ -12,6 +12,11 @@ const C = {
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
+const PTO_ACCRUAL_RATE = 1.54 / 40; // 1.54 hrs PTO per 40 hrs worked
+
+function calcPTOAccrued(regHours) {
+  return Math.round(regHours * PTO_ACCRUAL_RATE * 100) / 100;
+}
 
 function weekStart() {
   const d=new Date(); const day=d.getDay();
@@ -299,7 +304,7 @@ function EmployeeView({profile,projects,settings}) {
         const dayEntries={};
         (entries||[]).filter(e=>e.day_name===d.name).forEach(e=>{ dayEntries[e.project_id]={reg:e.reg_hours||"",ot:e.ot_hours||"",dt:e.dt_hours||""}; });
         const rep=(reports||[]).find(r=>r.day_name===d.name);
-        return{...d,entries:dayEntries,notes:rep?.notes||"",report:rep?.report_text||"",location:rep?.location||""};
+        return{...d,entries:dayEntries,notes:rep?.notes||"",report:rep?.report_text||"",location:rep?.location||profile.default_location||""};
       }));
     }
     setLoading(false);
@@ -309,6 +314,10 @@ function EmployeeView({profile,projects,settings}) {
     const {data}=await supabase.from("pto_requests").select("*").eq("employee_id",profile.id).order("created_at",{ascending:false}).limit(10);
     setMyPTO(data||[]);
   };
+
+  // Calculate PTO balance: total accrued from all approved timesheets minus used hours
+  const weekAccrued = calcPTOAccrued(grandReg);
+  const ptoUsedHours = myPTO.filter(r=>r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
 
   const updateEntry=(dayIdx,projId,field,val)=>{
     setDays(p=>p.map((d,i)=>i===dayIdx?{...d,entries:{...d.entries,[projId]:{...(d.entries[projId]||{}), [field]:val}}}:d));
@@ -398,6 +407,26 @@ function EmployeeView({profile,projects,settings}) {
           </div>
         </Card>
       )}
+
+      {/* PTO Balance */}
+      <Card style={{padding:16,marginBottom:20,border:`1px solid ${C.goldDim}`}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontWeight:800,color:C.gold,fontSize:14,marginBottom:2}}>📊 PTO Balance</div>
+            <div style={{color:C.muted,fontSize:12}}>Accrual rate: 1.54 hrs per 40 hrs worked</div>
+          </div>
+          <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{color:C.gold,fontWeight:900,fontSize:18}}>{weekAccrued.toFixed(2)}</div>
+              <div style={{color:C.muted,fontSize:11}}>Accruing this week</div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{color:C.amber,fontWeight:900,fontSize:18}}>{ptoUsedHours.toFixed(1)}</div>
+              <div style={{color:C.muted,fontSize:11}}>Used (approved)</div>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* PTO history */}
       {myPTO.length>0&&(
@@ -757,7 +786,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
 
   const saveEmpEdit=async()=>{
-    await supabase.from("profiles").update({name:editEmp.name,emp_no:editEmp.emp_no,role:editEmp.role,is_manager:editEmp.is_manager}).eq("id",editEmp.id);
+    await supabase.from("profiles").update({name:editEmp.name,emp_no:editEmp.emp_no,role:editEmp.role,is_manager:editEmp.is_manager,default_location:editEmp.default_location||null}).eq("id",editEmp.id);
     setEmployees(p=>p.map(e=>e.id===editEmp.id?editEmp:e));
     setEditEmp(null); flash("Employee updated!");
   };
@@ -844,6 +873,19 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                         </button>;
                       })}
                     </div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:8}}>DEFAULT LOCATION</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {(settingsForm.locations||DEFAULT_LOCATIONS).map(loc=>{
+                        const selected=(editEmp.default_location||"")=== loc;
+                        return <button key={loc} onClick={()=>setEditEmp(p=>({...p,default_location:selected?"":loc}))}
+                          style={{background:selected?C.goldDim:"#0f0f0f",border:`1px solid ${selected?C.gold:C.border}`,borderRadius:8,color:selected?C.gold:C.muted,cursor:"pointer",fontFamily:"inherit",fontSize:12,padding:"5px 12px"}}>
+                          {selected?"📍 ":""}{loc}
+                        </button>;
+                      })}
+                    </div>
+                    <p style={{color:C.muted,fontSize:11,marginTop:6}}>Sets the pre-filled location on this employee's timesheet each day.</p>
                   </div>
                   <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",marginBottom:12}}>
                     <input type="checkbox" checked={!!editEmp.is_manager} onChange={e=>setEditEmp(p=>({...p,is_manager:e.target.checked}))} style={{width:16,height:16}}/>
@@ -943,23 +985,54 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
 
       {/* PTO HISTORY */}
       {tab==="pto"&&(
-        <Card style={{padding:20}}>
-          <SectionHead>All Time Off Requests</SectionHead>
-          {ptoAll.length===0&&<p style={{color:C.muted,fontSize:13}}>No requests yet.</p>}
-          {ptoAll.map(req=>(
-            <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap",fontSize:13}}>
-              <div>
-                <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
-                <span style={{color:C.gold,marginLeft:10}}>{req.request_type}</span>
-                <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
-                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
-              </div>
-              <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
-                {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
-              </Badge>
+        <div>
+          {/* Accrual summary per employee */}
+          <Card style={{padding:20,marginBottom:16}}>
+            <SectionHead>PTO Accrual Summary</SectionHead>
+            <div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
+              <span style={{color:C.muted,fontSize:12}}>Accrual rate: </span>
+              <span style={{color:C.gold,fontWeight:700}}>1.54 hrs PTO per 40 hrs worked</span>
+              <span style={{color:C.muted,fontSize:12,marginLeft:16}}>({(1.54/40*100).toFixed(4)}% of REG hours)</span>
             </div>
-          ))}
-        </Card>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+              {employees.map(emp=>{
+                const used=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
+                const pending=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="pending"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
+                return(
+                  <div key={emp.id} style={{background:"#0f0f0f",borderRadius:10,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+                    <div style={{fontWeight:800,color:C.text,fontSize:13,marginBottom:8}}>{emp.name}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                      <span style={{color:C.muted}}>Used (approved)</span>
+                      <span style={{color:C.amber,fontWeight:700}}>{used.toFixed(1)} hrs</span>
+                    </div>
+                    {pending>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                      <span style={{color:C.muted}}>Pending requests</span>
+                      <span style={{color:C.gold,fontWeight:700}}>{pending.toFixed(1)} hrs</span>
+                    </div>}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          <Card style={{padding:20}}>
+            <SectionHead>All Time Off Requests</SectionHead>
+            {ptoAll.length===0&&<p style={{color:C.muted,fontSize:13}}>No requests yet.</p>}
+            {ptoAll.map(req=>(
+              <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap",fontSize:13}}>
+                <div>
+                  <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
+                  <span style={{color:C.gold,marginLeft:10}}>{req.request_type}</span>
+                  <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
+                  {req.hours&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.hours} hrs</span>}
+                  {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
+                </div>
+                <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
+                  {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
+                </Badge>
+              </div>
+            ))}
+          </Card>
+        </div>
       )}
 
       {/* SETTINGS */}
