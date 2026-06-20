@@ -12,12 +12,6 @@ const C = {
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
-const PTO_ACCRUAL_RATE = 1.54 / 40; // 1.54 hrs PTO per 40 hrs worked
-
-function calcPTOAccrued(regHours) {
-  return Math.round(regHours * PTO_ACCRUAL_RATE * 100) / 100;
-}
-
 function weekStart() {
   const d=new Date(); const day=d.getDay();
   const diff=day===0?-6:1-day;
@@ -355,10 +349,6 @@ function EmployeeView({profile,projects,settings}) {
   const grandOT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.ot)||0),0),0);
   const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
-  // Calculate PTO balance: total accrued from all approved timesheets minus used hours
-  const weekAccrued = calcPTOAccrued(grandReg);
-  const ptoUsedHours = myPTO.filter(r=>r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
-
   const handleSave=async(submit=false)=>{
     const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
     let tsId=timesheetId;
@@ -437,25 +427,6 @@ function EmployeeView({profile,projects,settings}) {
         </Card>
       )}
 
-      {/* PTO Balance */}
-      <Card style={{padding:16,marginBottom:20,border:`1px solid ${C.goldDim}`}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-          <div>
-            <div style={{fontWeight:800,color:C.gold,fontSize:14,marginBottom:2}}>📊 PTO Balance</div>
-            <div style={{color:C.muted,fontSize:12}}>Accrual rate: 1.54 hrs per 40 hrs worked</div>
-          </div>
-          <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{color:C.gold,fontWeight:900,fontSize:18}}>{weekAccrued.toFixed(2)}</div>
-              <div style={{color:C.muted,fontSize:11}}>Accruing this week</div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{color:C.amber,fontWeight:900,fontSize:18}}>{ptoUsedHours.toFixed(1)}</div>
-              <div style={{color:C.muted,fontSize:11}}>Used (approved)</div>
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* PTO history */}
       {myPTO.length>0&&(
