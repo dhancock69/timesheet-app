@@ -363,25 +363,21 @@ function EmployeeView({profile,projects,settings}) {
     } else if(submit){
       await supabase.from("timesheets").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",tsId);
     }
-    // Save entries
+    // Save entries — delete existing then re-insert to avoid constraint issues
+    await supabase.from("timesheet_entries").delete().eq("timesheet_id",tsId);
+    await supabase.from("daily_reports").delete().eq("timesheet_id",tsId);
+    const entryRows=[];
+    const reportRows=[];
     for(const day of days){
       for(const proj of empProjects){
         const entry=day.entries[proj.id]||{};
         const reg=parseFloat(entry.reg)||0, ot=parseFloat(entry.ot)||0, dt=parseFloat(entry.dt)||0;
-        if(reg||ot||dt){
-          await supabase.from("timesheet_entries").upsert({
-            timesheet_id:tsId, project_id:proj.id, day_name:day.name,
-            reg_hours:reg, ot_hours:ot, dt_hours:dt
-          },{onConflict:"timesheet_id,project_id,day_name"});
-        }
+        if(reg||ot||dt) entryRows.push({timesheet_id:tsId,project_id:proj.id,day_name:day.name,reg_hours:reg,ot_hours:ot,dt_hours:dt});
       }
-      if(day.notes||day.report||day.location){
-        await supabase.from("daily_reports").upsert({
-          timesheet_id:tsId, day_name:day.name,
-          report_text:day.report, notes:day.notes, location:day.location
-        },{onConflict:"timesheet_id,day_name"});
-      }
+      if(day.notes||day.report||day.location) reportRows.push({timesheet_id:tsId,day_name:day.name,report_text:day.report,notes:day.notes,location:day.location});
     }
+    if(entryRows.length) await supabase.from("timesheet_entries").insert(entryRows);
+    if(reportRows.length) await supabase.from("daily_reports").insert(reportRows);
     setSavedMsg(true);
     if(submit) setSubmitted(true);
   };
