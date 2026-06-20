@@ -345,10 +345,6 @@ function EmployeeView({profile,projects,settings}) {
     setMyPTO(data||[]);
   };
 
-  // Calculate PTO balance: total accrued from all approved timesheets minus used hours
-  const weekAccrued = calcPTOAccrued(grandReg);
-  const ptoUsedHours = myPTO.filter(r=>r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
-
   const updateEntry=(dayIdx,projId,field,val)=>{
     setDays(p=>p.map((d,i)=>i===dayIdx?{...d,entries:{...d.entries,[projId]:{...(d.entries[projId]||{}), [field]:val}}}:d));
     setSavedMsg(false);
@@ -359,9 +355,9 @@ function EmployeeView({profile,projects,settings}) {
   const grandOT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.ot)||0),0),0);
   const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
-  // Calculate PTO balance...
-const weekAccrued = calcPTOAccrued(grandReg);
-const ptoUsedHours = myPTO.filter(...)...
+  // Calculate PTO balance: total accrued from all approved timesheets minus used hours
+  const weekAccrued = calcPTOAccrued(grandReg);
+  const ptoUsedHours = myPTO.filter(r=>r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
 
   const handleSave=async(submit=false)=>{
     const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
