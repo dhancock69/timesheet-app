@@ -359,6 +359,9 @@ function EmployeeView({profile,projects,settings}) {
   const grandOT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.ot)||0),0),0);
   const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
+  // Calculate PTO balance...
+const weekAccrued = calcPTOAccrued(grandReg);
+const ptoUsedHours = myPTO.filter(...)...
 
   const handleSave=async(submit=false)=>{
     const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
