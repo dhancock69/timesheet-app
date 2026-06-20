@@ -317,7 +317,7 @@ function EmployeeView({profile,projects,settings}) {
   const [showReminderPanel,setShowReminderPanel]=useState(false);
   const [extraReminder,setExtraReminder]=useState("");
   const locations=settings?.locations||DEFAULT_LOCATIONS;
-  const empProjects=projects.filter(p=>p.assigned);
+  const empProjects=projects.filter(p=>p.assigned||p.employee_projects?.some(ep=>ep.employee_id===profile.id));
 
   useEffect(()=>{ loadTimesheet(); loadMyPTO(); },[]);
 
