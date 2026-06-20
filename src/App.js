@@ -310,6 +310,7 @@ function EmployeeView({profile,projects,settings}) {
   const [myPTO,setMyPTO]=useState([]);
   const [showReminderPanel,setShowReminderPanel]=useState(false);
   const [extraReminder,setExtraReminder]=useState("");
+  const [saving,setSaving]=useState(false);
   const locations=settings?.locations||DEFAULT_LOCATIONS;
   const empProjects=projects.filter(p=>p.assigned||p.employee_projects?.some(ep=>ep.employee_id===profile.id));
 
@@ -350,6 +351,7 @@ function EmployeeView({profile,projects,settings}) {
   const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
   const handleSave=async(submit=false)=>{
+    setSaving(true);
     const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
     let tsId=timesheetId;
     if(!tsId){
@@ -378,6 +380,7 @@ function EmployeeView({profile,projects,settings}) {
     }
     if(entryRows.length) await supabase.from("timesheet_entries").insert(entryRows);
     if(reportRows.length) await supabase.from("daily_reports").insert(reportRows);
+    setSaving(false);
     setSavedMsg(true);
     if(submit) setSubmitted(true);
   };
@@ -517,7 +520,7 @@ function EmployeeView({profile,projects,settings}) {
 
       {!submitted&&(
         <div style={{display:"flex",gap:12,justifyContent:"flex-end",marginTop:8}}>
-          <Btn variant="ghost" onClick={()=>handleSave(false)}>Save Draft</Btn>
+          <Btn variant="gold" onClick={()=>handleSave(false)} disabled={saving}>{saving?"Saving…":"💾 Save Draft"}</Btn>
           <Btn variant="primary" onClick={()=>handleSave(true)} disabled={grandTotal===0}>Submit Timesheet ✓</Btn>
         </div>
       )}
