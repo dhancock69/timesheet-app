@@ -843,8 +843,10 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
 
   const saveProjEdit=async()=>{
-    await supabase.from("projects").update(editProj).eq("id",editProj.id);
-    setProjects(p=>p.map(x=>x.id===editProj.id?{...x,...editProj}:x));
+    const {id,project_name,project_num,task_num,description,active}=editProj;
+    const {error}=await supabase.from("projects").update({project_name,project_num,task_num,description,active}).eq("id",id);
+    if(error){flash("Save error: "+error.message);return;}
+    setProjects(p=>p.map(x=>x.id===id?{...x,...editProj}:x));
     setEditProj(null); flash("Project updated!");
   };
 
