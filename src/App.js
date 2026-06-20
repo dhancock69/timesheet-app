@@ -394,7 +394,7 @@ function EmployeeView({profile,projects,settings}) {
     <div style={{maxWidth:1000,margin:"0 auto",position:"relative",zIndex:1}}>
       {showPTO&&<PTOModal profile={profile} onClose={()=>setShowPTO(false)} onSubmit={loadMyPTO}/>}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(26,16,16,0.97)",backdropFilter:"blur(10px)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>{profile.name}</h2>
           <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
@@ -406,6 +406,10 @@ function EmployeeView({profile,projects,settings}) {
           </div>
           <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
           <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
+          {!submitted&&<>
+            <Btn variant="gold" small onClick={()=>handleSave(false)} disabled={saving}>{saving?"Saving…":"💾 Save Draft"}</Btn>
+            <Btn variant="primary" small onClick={()=>handleSave(true)} disabled={grandTotal===0}>Submit ✓</Btn>
+          </>}
         </div>
       </div>
 
@@ -518,12 +522,7 @@ function EmployeeView({profile,projects,settings}) {
         );
       })}
 
-      {!submitted&&(
-        <div style={{display:"flex",gap:12,justifyContent:"flex-end",marginTop:8}}>
-          <Btn variant="gold" onClick={()=>handleSave(false)} disabled={saving}>{saving?"Saving…":"💾 Save Draft"}</Btn>
-          <Btn variant="primary" onClick={()=>handleSave(true)} disabled={grandTotal===0}>Submit Timesheet ✓</Btn>
-        </div>
-      )}
+
       {submitted&&<div style={{background:C.greenDim,border:`1px solid ${C.green}`,borderRadius:10,padding:"14px 20px",color:C.green,fontWeight:700,textAlign:"center",marginTop:8}}>Timesheet submitted. Your manager will review and send to payroll.</div>}
     </div>
   );
