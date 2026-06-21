@@ -124,7 +124,7 @@ function Select({value,onChange,children,style={}}) {
   </select>;
 }
 function Card({children,style={}}) {
-  return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
+  return <div style={{background:"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
 }
 function SectionHead({children}) {
   return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -624,7 +624,7 @@ function ManagerView({employees,projects,settings}) {
   const pending=employees.filter(e=>!timesheets.find(t=>t.employee_id===e.id&&(t.status==="submitted"||t.status==="approved")));
 
   return(
-    <div style={{maxWidth:960,margin:"0 auto",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
       {showReject&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <Card style={{padding:24,width:"100%",maxWidth:400}}>
@@ -638,7 +638,7 @@ function ManagerView({employees,projects,settings}) {
         </div>
       )}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(6,4,4,0.22)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
           <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)}</p>
@@ -844,7 +844,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"settings",label:"⚙ Settings"}];
 
   return(
-    <div style={{maxWidth:960,margin:"0 auto",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
         <div style={{width:40,height:40,background:`linear-gradient(135deg,${C.accent},${C.gold})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔧</div>
         <div><h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Admin Console</h2><p style={{margin:0,color:C.muted,fontSize:13}}>Manage team, projects, locations & settings</p></div>
@@ -932,7 +932,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
           {projects.map(proj=>(
             <Card key={proj.id} style={{marginBottom:10,overflow:"hidden"}}>
               {editProj?.id===proj.id?(
-                <div style={{padding:16}}>
+                <div style={{padding:16,background:"rgba(6,4,4,0.22)",borderRadius:8}}>
                   <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT NAME</label><Input value={editProj.project_name||""} onChange={v=>setEditProj(p=>({...p,project_name:v}))}/></div>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT #</label><Input value={editProj.project_num||""} onChange={v=>setEditProj(p=>({...p,project_num:v}))}/></div>
@@ -1192,7 +1192,7 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div style={{padding:"32px 24px",maxWidth:1100,margin:"0 auto"}}>
+      <div style={{padding:"32px 24px",maxWidth:780,margin:"0 auto"}}>
         {view==="timesheet"&&<EmployeeView profile={profile} projects={myProjects} settings={settings}/>}
         {view==="manager"&&isManager&&<ManagerView employees={employees} projects={projects} settings={settings}/>}
         {view==="admin"&&isManager&&<AdminConsole employees={employees} setEmployees={setEmployees} projects={projects} setProjects={setProjects} settings={settings} setSettings={setSettings} currentUser={profile}/>}
