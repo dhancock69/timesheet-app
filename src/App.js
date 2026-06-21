@@ -456,8 +456,8 @@ function EmployeeView({profile,projects,settings}) {
         const dOT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.ot)||0),0);
         const dDT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.dt)||0),0);
         return(
-          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,${C.accentDim},${C.surface})`:C.surface}}>
+          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none",background:"rgba(20,10,10,0.55)",backdropFilter:"blur(6px)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,rgba(61,15,10,0.85),rgba(36,24,24,0.7))`:"rgba(36,24,24,0.5)"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontWeight:900,color:isToday?C.accent:C.text,fontSize:14}}>{day.name}</span>
                 <span style={{color:C.muted,fontSize:12}}>{day.date}</span>
