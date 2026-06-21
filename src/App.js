@@ -676,7 +676,7 @@ function ManagerView({employees,projects,settings}) {
           const ts=timesheets.find(t=>t.employee_id===emp.id);
           const sub=ts&&(ts.status==="submitted"||ts.status==="approved");
           return(
-            <Card key={emp.id} style={{padding:16,cursor:sub?"pointer":"default",border:`1px solid ${sub?C.accent:C.border}`}}
+            <Card solid key={emp.id} style={{padding:16,cursor:sub?"pointer":"default",border:`1px solid ${sub?C.accent:C.border}`}}
               onClick={()=>sub&&(selected===emp.id?(setSelected(null),setDetail(null)):loadDetail(emp.id,ts.id))}>
               <div style={{fontWeight:900,color:C.text,fontSize:14,marginBottom:2}}>{emp.name}</div>
               <div style={{color:C.gold,fontSize:12,marginBottom:10}}>{emp.emp_no||"No Emp# yet"}</div>
