@@ -123,8 +123,8 @@ function Select({value,onChange,children,style={}}) {
     {children}
   </select>;
 }
-function Card({children,style={}}) {
-  return <div style={{background:"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
+function Card({children,style={},solid=false}) {
+  return <div style={{background:solid?"rgba(8,4,4,0.72)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
 }
 function SectionHead({children}) {
   return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -627,7 +627,7 @@ function ManagerView({employees,projects,settings}) {
     <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
       {showReject&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <Card style={{padding:24,width:"100%",maxWidth:400}}>
+          <Card solid style={{padding:24,width:"100%",maxWidth:400}}>
             <h3 style={{margin:"0 0 14px",color:C.text}}>Reject Timesheet</h3>
             <Textarea value={rejectNote} onChange={setRejectNote} placeholder="Reason for rejection (employee will see this)…" rows={3}/>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:14}}>
@@ -638,7 +638,7 @@ function ManagerView({employees,projects,settings}) {
         </div>
       )}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(6,4,4,0.22)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.72)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
           <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)}</p>
@@ -651,7 +651,7 @@ function ManagerView({employees,projects,settings}) {
 
       {/* PTO Requests */}
       {ptoRequests.length>0&&(
-        <Card style={{padding:20,marginBottom:24}}>
+        <Card solid style={{padding:20,marginBottom:24}}>
           <SectionHead>📅 Pending Time Off Requests</SectionHead>
           {ptoRequests.map(req=>(
             <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap"}}>
@@ -699,7 +699,7 @@ function ManagerView({employees,projects,settings}) {
         const emp=employees.find(e=>e.id===selected);
         const ts=timesheets.find(t=>t.employee_id===selected);
         return(
-          <Card style={{marginBottom:24,padding:24}}>
+          <Card solid style={{marginBottom:24,padding:24}}>
             <h3 style={{margin:"0 0 16px",color:C.text,fontWeight:900}}>{emp?.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp?.emp_no}</span></h3>
             {DAYS.map(day=>{
               const dayEntries=detail.entries.filter(e=>e.day_name===day);
@@ -731,7 +731,7 @@ function ManagerView({employees,projects,settings}) {
 
       {/* Export panel */}
       {submitted.length>0&&(
-        <Card style={{padding:24}}>
+        <Card solid style={{padding:24}}>
           <h3 style={{margin:"0 0 8px",color:C.text,fontSize:16,fontWeight:900}}>Export & Send</h3>
           <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Exports timesheet in your company format with PROJECT DESCRIPTION column.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -932,7 +932,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
           {projects.map(proj=>(
             <Card key={proj.id} style={{marginBottom:10,overflow:"hidden"}}>
               {editProj?.id===proj.id?(
-                <div style={{padding:16,background:"rgba(6,4,4,0.22)",borderRadius:8}}>
+                <div style={{padding:16,background:"rgba(8,4,4,0.72)",borderRadius:8}}>
                   <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT NAME</label><Input value={editProj.project_name||""} onChange={v=>setEditProj(p=>({...p,project_name:v}))}/></div>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT #</label><Input value={editProj.project_num||""} onChange={v=>setEditProj(p=>({...p,project_num:v}))}/></div>
@@ -972,7 +972,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       {/* LOCATIONS */}
       {tab==="locations"&&(
         <div style={{maxWidth:500}}>
-          <Card style={{padding:20,marginBottom:16}}>
+          <Card solid style={{padding:20,marginBottom:16}}>
             <SectionHead>Location List</SectionHead>
             {(settingsForm.locations||DEFAULT_LOCATIONS).map(loc=>(
               <div key={loc} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"#0f0f0f",borderRadius:8,marginBottom:8,border:`1px solid ${C.border}`}}>
@@ -993,7 +993,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       {tab==="pto"&&(
         <div>
           {/* Accrual summary per employee */}
-          <Card style={{padding:20,marginBottom:16}}>
+          <Card solid style={{padding:20,marginBottom:16}}>
             <SectionHead>PTO Accrual Summary</SectionHead>
             <div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
               <span style={{color:C.muted,fontSize:12}}>Accrual rate: </span>
@@ -1020,7 +1020,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
               })}
             </div>
           </Card>
-          <Card style={{padding:20}}>
+          <Card solid style={{padding:20}}>
             <SectionHead>All Time Off Requests</SectionHead>
             {ptoAll.length===0&&<p style={{color:C.muted,fontSize:13}}>No requests yet.</p>}
             {ptoAll.map(req=>(
@@ -1044,7 +1044,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       {/* SETTINGS */}
       {tab==="settings"&&(
         <div style={{maxWidth:560}}>
-          <Card style={{padding:24}}>
+          <Card solid style={{padding:24}}>
             <SectionHead>Platform Settings</SectionHead>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>COMPANY NAME</label><Input value={settingsForm.company||""} onChange={v=>setSettingsForm(p=>({...p,company:v}))}/></div>
