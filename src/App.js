@@ -124,7 +124,7 @@ function Select({value,onChange,children,style={}}) {
   </select>;
 }
 function Card({children,style={},solid=false}) {
-  return <div style={{background:solid?"rgba(8,4,4,0.72)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
+  return <div style={{background:solid?"rgba(8,4,4,0.88)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
 }
 function SectionHead({children}) {
   return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -409,7 +409,7 @@ function EmployeeView({profile,projects,settings}) {
           </div>
         </div>
         {/* Row 2: Action buttons */}
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
           <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
           <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
           {!submitted&&<>
@@ -638,7 +638,7 @@ function ManagerView({employees,projects,settings}) {
         </div>
       )}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.72)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.88)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
           <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)}</p>
@@ -932,7 +932,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
           {projects.map(proj=>(
             <Card key={proj.id} style={{marginBottom:10,overflow:"hidden"}}>
               {editProj?.id===proj.id?(
-                <div style={{padding:16,background:"rgba(8,4,4,0.72)",borderRadius:8}}>
+                <div style={{padding:16,background:"rgba(8,4,4,0.88)",borderRadius:8}}>
                   <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT NAME</label><Input value={editProj.project_name||""} onChange={v=>setEditProj(p=>({...p,project_name:v}))}/></div>
                     <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PROJECT #</label><Input value={editProj.project_num||""} onChange={v=>setEditProj(p=>({...p,project_num:v}))}/></div>
