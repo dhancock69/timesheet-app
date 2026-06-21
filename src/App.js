@@ -61,7 +61,7 @@ function BeardCanvas() {
     let itemIdx=0;
     for(let x=-200;x<canvasW+200;x+=220){
       const isBeard=rowIsBeardFirst?itemIdx%2===0:itemIdx%2!==0;
-      const opacity=isBeard?[0.12,0.08,0.10][depth]:[0.07,0.04,0.06][depth];
+      const opacity=isBeard?[0.32,0.22,0.28][depth]:[0.18,0.12,0.16][depth];
       const size=isBeard?[12,10,11][depth]:[10,9,10][depth];
       const px=x+(y*angleOffset);
       items.push({text:isBeard?'BEARD \u201CONE\u201D':'1% BETTER EVERY DAY',opacity,size,px,py:y,isBeard});
@@ -391,19 +391,25 @@ function EmployeeView({profile,projects,settings}) {
   if(loading) return <div style={{textAlign:"center",padding:60,color:C.muted}}>Loading your timesheet…</div>;
 
   return(
-    <div style={{maxWidth:1000,margin:"0 auto",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
       {showPTO&&<PTOModal profile={profile} onClose={()=>setShowPTO(false)} onSubmit={loadMyPTO}/>}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(15,8,8,0.88)",backdropFilter:"blur(10px)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
-        <div>
-          <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>{profile.name}</h2>
-          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          {submitted?<Badge color="green">✓ Submitted</Badge>:savedMsg?<Badge color="amber">Saved</Badge>:null}
-          <div style={{background:C.accentDim,borderRadius:8,padding:"8px 14px",fontWeight:800,fontSize:12,color:C.accent,border:`1px solid ${C.accent}33`}}>
-            REG {grandReg.toFixed(1)} · OT {grandOT.toFixed(1)} · DT {grandDT.toFixed(1)} · <span style={{color:C.green}}>Total {grandTotal.toFixed(1)}</span>
+      <div style={{position:"sticky",top:113,zIndex:40,background:"rgba(15,8,8,0.88)",backdropFilter:"blur(10px)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:20}}>
+        {/* Row 1: Name + hours summary + status */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:8}}>
+          <div>
+            <h2 style={{margin:0,color:C.text,fontSize:20,fontWeight:900}}>{profile.name}</h2>
+            <p style={{margin:"2px 0 0",color:C.muted,fontSize:12}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
           </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{background:C.accentDim,borderRadius:8,padding:"6px 12px",fontWeight:800,fontSize:12,color:C.accent,border:`1px solid ${C.accent}33`}}>
+              REG {grandReg.toFixed(1)} · OT {grandOT.toFixed(1)} · DT {grandDT.toFixed(1)} · <span style={{color:C.green}}>Total {grandTotal.toFixed(1)}</span>
+            </div>
+            {submitted?<Badge color="green">✓ Submitted</Badge>:savedMsg?<Badge color="amber">✓ Saved</Badge>:null}
+          </div>
+        </div>
+        {/* Row 2: Action buttons */}
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
           <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
           <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
           {!submitted&&<>
@@ -456,7 +462,7 @@ function EmployeeView({profile,projects,settings}) {
         const dOT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.ot)||0),0);
         const dDT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.dt)||0),0);
         return(
-          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none",background:"rgba(8,6,6,0.35)",backdropFilter:"blur(8px)"}}>
+          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none",background:"rgba(6,4,4,0.22)",backdropFilter:"blur(8px)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,rgba(100,20,12,0.70),rgba(20,10,10,0.45))`:"rgba(15,10,10,0.35)"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontWeight:900,color:isToday?C.accent:C.text,fontSize:14}}>{day.name}</span>
