@@ -6,7 +6,7 @@ const C = {
   bg:"#1a1010",surface:"#241818",card:"#2e1e1e",border:"#3a2525",
   accent:"#c0392b",accentDim:"#3d0f0a",accentHover:"#e74c3c",
   green:"#2dd4a0",greenDim:"#0d3d2e",amber:"#f5a623",amberDim:"#3d2800",
-  red:"#e74c3c",redDim:"#3d1010",text:"#f0ece8",muted:"#8a7f7a",white:"#ffffff",
+  red:"#e74c3c",redDim:"#3d1010",text:"#ffffff",muted:"#b0a8a4",white:"#ffffff",
   purple:"#a78bfa",purpleDim:"#2e1f5e",gold:"#c9a84c",goldDim:"#3d2e10",
 };
 
@@ -61,7 +61,7 @@ function BeardCanvas() {
     let itemIdx=0;
     for(let x=-200;x<canvasW+200;x+=220){
       const isBeard=rowIsBeardFirst?itemIdx%2===0:itemIdx%2!==0;
-      const opacity=isBeard?[0.22,0.15,0.19][depth]:[0.13,0.08,0.11][depth];
+      const opacity=isBeard?[0.12,0.08,0.10][depth]:[0.07,0.04,0.06][depth];
       const size=isBeard?[12,10,11][depth]:[10,9,10][depth];
       const px=x+(y*angleOffset);
       items.push({text:isBeard?'BEARD \u201CONE\u201D':'1% BETTER EVERY DAY',opacity,size,px,py:y,isBeard});
@@ -70,7 +70,7 @@ function BeardCanvas() {
     stripeIdx++;
   }
 
-  const imgBase={position:"absolute",inset:0,backgroundSize:"cover",backgroundPosition:"center",filter:"grayscale(60%) sepia(30%)",transition:`opacity ${FADE_MS}ms ease-in-out`};
+  const imgBase={position:"absolute",inset:0,backgroundSize:"cover",backgroundPosition:"center",filter:"grayscale(20%) sepia(10%) brightness(1.15) contrast(1.05)",transition:`opacity ${FADE_MS}ms ease-in-out`};
   return(
     <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
       {BIM_IMAGES.map((src,idx)=>{
@@ -78,8 +78,8 @@ function BeardCanvas() {
         const op=iC?(fading?0:.18):iN?(fading?.18:0):0;
         return <div key={src} style={{...imgBase,backgroundImage:`url('${src}')`,opacity:op}}/>;
       })}
-      <div style={{position:"absolute",inset:0,background:"rgba(30,8,8,0.55)"}}/>
-      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center,transparent 30%,rgba(80,10,5,0.25) 100%)"}}/>
+      <div style={{position:"absolute",inset:0,background:"rgba(10,5,5,0.38)"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center,transparent 40%,rgba(40,5,2,0.15) 100%)"}}/>
       <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
         {items.map((item,i)=>(
           <span key={i} style={{
@@ -394,7 +394,7 @@ function EmployeeView({profile,projects,settings}) {
     <div style={{maxWidth:1000,margin:"0 auto",position:"relative",zIndex:1}}>
       {showPTO&&<PTOModal profile={profile} onClose={()=>setShowPTO(false)} onSubmit={loadMyPTO}/>}
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(26,16,16,0.97)",backdropFilter:"blur(10px)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(15,8,8,0.88)",backdropFilter:"blur(10px)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>{profile.name}</h2>
           <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
@@ -456,8 +456,8 @@ function EmployeeView({profile,projects,settings}) {
         const dOT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.ot)||0),0);
         const dDT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.dt)||0),0);
         return(
-          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none",background:"rgba(20,10,10,0.55)",backdropFilter:"blur(6px)"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,rgba(61,15,10,0.85),rgba(36,24,24,0.7))`:"rgba(36,24,24,0.5)"}}>
+          <Card key={day.name} style={{marginBottom:14,overflow:"hidden",border:`1px solid ${isToday?C.accent:C.border}`,boxShadow:isToday?`0 0 0 1px ${C.accent}22`:"none",background:"rgba(8,6,6,0.35)",backdropFilter:"blur(8px)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:`1px solid ${C.border}`,background:isToday?`linear-gradient(90deg,rgba(100,20,12,0.70),rgba(20,10,10,0.45))`:"rgba(15,10,10,0.35)"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontWeight:900,color:isToday?C.accent:C.text,fontSize:14}}>{day.name}</span>
                 <span style={{color:C.muted,fontSize:12}}>{day.date}</span>
@@ -1145,7 +1145,7 @@ export default function App() {
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'DM Sans',system-ui,sans-serif",color:C.text,position:"relative"}}>
       <BeardCanvas/>
       {/* Header */}
-      <div style={{background:"rgba(26,16,16,0.96)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(10px)"}}>
+      <div style={{background:"rgba(12,6,6,0.92)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(10px)"}}>
         <div style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,position:"relative"}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(135deg,#8b0000,#c0392b)",display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #c0392b44",boxShadow:"0 0 16px rgba(192,57,43,0.3)"}}>
@@ -1174,7 +1174,7 @@ export default function App() {
       </div>
 
       {/* Nav */}
-      <div style={{background:"rgba(26,16,16,0.92)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
+      <div style={{background:"rgba(12,6,6,0.88)",borderBottom:`1px solid ${C.border}`,padding:"0 24px",position:"sticky",top:64,zIndex:49,backdropFilter:"blur(10px)"}}>
         <div style={{maxWidth:1100,margin:"0 auto",display:"flex",gap:0,overflowX:"auto"}}>
           {navTabs.map(tab=>(
             <button key={tab.id} onClick={()=>setView(tab.id)}
