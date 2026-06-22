@@ -422,7 +422,7 @@ function EmployeeView({profile,projects,settings}) {
       {showReminderPanel&&(
         <Card style={{padding:18,marginBottom:20}}>
           <div style={{fontWeight:800,color:C.text,fontSize:14,marginBottom:14}}>🔔 Reminder Settings</div>
-          <div style={{background:"#0f0f0f",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
+          <div style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
             <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Every weekday at 1:00 PM</div></div>
             <Badge color="green">Always On</Badge>
           </div>
@@ -845,12 +845,17 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
 
   return(
     <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
-        <div style={{width:40,height:40,background:`linear-gradient(135deg,${C.accent},${C.gold})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔧</div>
-        <div><h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Admin Console</h2><p style={{margin:0,color:C.muted,fontSize:13}}>Manage team, projects, locations & settings</p></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.88)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.accent},${C.gold})`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🔧</div>
+          <div>
+            <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Admin Console</h2>
+            <p style={{margin:0,color:C.muted,fontSize:12}}>Manage team, projects, locations & settings</p>
+          </div>
+        </div>
         {saved&&<Badge color="green">✓ {saved}</Badge>}
       </div>
-      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,marginBottom:24}}>
+      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,marginBottom:24,background:"rgba(8,4,4,0.88)",borderRadius:8,padding:"0 8px"}}>
         {tabs.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",borderBottom:`3px solid ${tab===t.id?C.accent:"transparent"}`,color:tab===t.id?C.accent:C.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,padding:"12px 16px",transition:"color .15s"}}>{t.label}</button>
         ))}
@@ -860,7 +865,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       {tab==="team"&&(
         <div>
           {employees.map(emp=>(
-            <Card key={emp.id} style={{marginBottom:10,overflow:"hidden"}}>
+            <Card solid key={emp.id} style={{marginBottom:10,overflow:"hidden"}}>
               {editEmp?.id===emp.id?(
                 <div style={{padding:18}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
@@ -900,7 +905,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                   <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveEmpEdit}>Save</Btn><Btn variant="ghost" small onClick={()=>setEditEmp(null)}>Cancel</Btn></div>
                 </div>
               ):(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10,background:"rgba(8,4,4,0.88)",borderRadius:8,marginBottom:4}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <div style={{width:38,height:38,background:C.accentDim,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,color:C.accent,fontSize:13}}>{(emp.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
                     <div>
@@ -943,7 +948,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                   <div style={{display:"flex",gap:10}}><Btn variant="green" small onClick={saveProjEdit}>Save</Btn><Btn variant="ghost" small onClick={()=>setEditProj(null)}>Cancel</Btn></div>
                 </div>
               ):(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",flexWrap:"wrap",gap:10,background:"rgba(8,4,4,0.88)",borderRadius:8,marginBottom:4}}>
                   <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
                     {proj.project_name&&<span style={{color:C.gold,fontWeight:800}}>{proj.project_name}</span>}
                     <span style={{color:C.accent,fontWeight:700}}>{proj.project_num}</span>
@@ -975,7 +980,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
           <Card solid style={{padding:20,marginBottom:16}}>
             <SectionHead>Location List</SectionHead>
             {(settingsForm.locations||DEFAULT_LOCATIONS).map(loc=>(
-              <div key={loc} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"#0f0f0f",borderRadius:8,marginBottom:8,border:`1px solid ${C.border}`}}>
+              <div key={loc} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"rgba(8,4,4,0.88)",borderRadius:8,marginBottom:8,border:`1px solid ${C.border}`}}>
                 <span style={{color:C.text,fontWeight:600}}>📍 {loc}</span>
                 <Btn variant="danger" small onClick={()=>removeLocation(loc)}>Remove</Btn>
               </div>
@@ -995,7 +1000,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
           {/* Accrual summary per employee */}
           <Card solid style={{padding:20,marginBottom:16}}>
             <SectionHead>PTO Accrual Summary</SectionHead>
-            <div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
+            <div style={{background:"rgba(8,4,4,0.88)",borderRadius:8,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
               <span style={{color:C.muted,fontSize:12}}>Accrual rate: </span>
               <span style={{color:C.gold,fontWeight:700}}>1.54 hrs PTO per 40 hrs worked</span>
               <span style={{color:C.muted,fontSize:12,marginLeft:16}}>({(1.54/40*100).toFixed(4)}% of REG hours)</span>
@@ -1005,7 +1010,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                 const used=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
                 const pending=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="pending"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
                 return(
-                  <div key={emp.id} style={{background:"#0f0f0f",borderRadius:10,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+                  <div key={emp.id} style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"14px 16px",border:`1px solid ${C.border}`}}>
                     <div style={{fontWeight:800,color:C.text,fontSize:13,marginBottom:8}}>{emp.name}</div>
                     <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
                       <span style={{color:C.muted}}>Used (approved)</span>
