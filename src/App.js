@@ -700,7 +700,17 @@ function ManagerView({employees,projects,settings}) {
         const ts=timesheets.find(t=>t.employee_id===selected);
         return(
           <Card solid style={{marginBottom:24,padding:24}}>
-            <h3 style={{margin:"0 0 16px",color:C.text,fontWeight:900}}>{emp?.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp?.emp_no}</span></h3>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <h3 style={{margin:0,color:C.text,fontWeight:900}}>{emp?.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp?.emp_no}</span></h3>
+              {ts?.status==="submitted"&&(
+                <div style={{display:"flex",gap:8}}>
+                  <Btn variant="green" small onClick={()=>handleApprove(ts.id)}>✓ Approve</Btn>
+                  <Btn variant="danger" small onClick={()=>setShowReject(ts.id)}>✗ Reject</Btn>
+                </div>
+              )}
+              {ts?.status==="approved"&&<Badge color="green">✓ Approved</Badge>}
+              {ts?.status==="rejected"&&<Badge color="red">✗ Rejected</Badge>}
+            </div>
             {DAYS.map(day=>{
               const dayEntries=detail.entries.filter(e=>e.day_name===day);
               const rep=detail.reports.find(r=>r.day_name===day);
@@ -720,7 +730,7 @@ function ManagerView({employees,projects,settings}) {
                       </div>
                     );
                   })}
-                  {rep?.notes&&<p style={{color:C.muted,fontSize:12,margin:"6px 0 0"}}>📝 {rep.notes}</p>}
+                  {rep?.notes&&<p style={{color:C.muted,fontSize:12,margin:"6px 0 0"}}>📝 <span style={{color:C.amber,fontWeight:700}}>NOTES: </span>{rep.notes}</p>}
                   {rep?.report_text&&<div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:13,color:C.text,borderLeft:`3px solid ${C.accent}`}}><span style={{color:C.accent,fontSize:11,fontWeight:700}}>DAILY REPORT · </span>{rep.report_text}</div>}
                 </div>
               );
@@ -790,8 +800,15 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
 
   const saveEmpEdit=async()=>{
-    await supabase.from("profiles").update({name:editEmp.name,emp_no:editEmp.emp_no,role:editEmp.role,is_manager:editEmp.is_manager,default_location:editEmp.default_location||null}).eq("id",editEmp.id);
-    setEmployees(p=>p.map(e=>e.id===editEmp.id?editEmp:e));
+    const {error}=await supabase.from("profiles").update({
+      name:editEmp.name,
+      emp_no:editEmp.emp_no||null,
+      role:editEmp.role,
+      is_manager:!!editEmp.is_manager,
+      default_location:editEmp.default_location||null
+    }).eq("id",editEmp.id);
+    if(error){flash("Save error: "+error.message);return;}
+    setEmployees(p=>p.map(e=>e.id===editEmp.id?{...e,...editEmp}:e));
     setEditEmp(null); flash("Employee updated!");
   };
 
