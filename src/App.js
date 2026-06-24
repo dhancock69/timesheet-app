@@ -566,11 +566,8 @@ function ManagerView({employees,projects,settings}) {
 
   const detailRef=useRef(null);
   const loadDetail=async(empId,tsId)=>{
-    console.log("loadDetail called",{empId,tsId});
-    const {data:entries,error:e1}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",tsId);
-    const {data:reports,error:e2}=await supabase.from("daily_reports").select("*").eq("timesheet_id",tsId);
-    console.log("entries:",entries,"error:",e1);
-    console.log("reports:",reports,"error:",e2);
+    const {data:entries}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",tsId);
+    const {data:reports}=await supabase.from("daily_reports").select("*").eq("timesheet_id",tsId);
     setDetail({empId,tsId,entries:entries||[],reports:reports||[]});
     setSelected(empId);
     setTimeout(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);
@@ -738,7 +735,7 @@ function ManagerView({employees,projects,settings}) {
           const sub=ts&&(ts.status==="submitted"||ts.status==="approved");
           return(
             <Card solid key={emp.id} style={{padding:16,cursor:sub?"pointer":"default",border:`1px solid ${sub?C.accent:C.border}`}}
-              onClick={()=>{console.log('card clicked',{sub,empId:emp.id,tsId:ts?.id,selected});sub&&(selected===emp.id?(setSelected(null),setDetail(null)):loadDetail(emp.id,ts.id));}}>
+              onClick={()=>sub&&(selected===emp.id?(setSelected(null),setDetail(null)):loadDetail(emp.id,ts.id))}>
               <div style={{fontWeight:900,color:C.text,fontSize:14,marginBottom:2}}>{emp.name}</div>
               <div style={{color:C.gold,fontSize:12,marginBottom:10}}>{emp.emp_no||"No Emp# yet"}</div>
               {sub?<>
@@ -784,7 +781,7 @@ function ManagerView({employees,projects,settings}) {
                     const proj=projects.find(p=>p.id===e.project_id);
                     return(
                       <div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:C.text,padding:"2px 0"}}>
-                        <span style={{color:C.gold}}>{proj?.project_name||proj?.project_num} <span style={{color:C.muted,fontSize:11}}>{proj?.task_num}</span></span>
+                        <span style={{color:C.gold}}>{proj?.project_num} <span style={{color:C.muted,fontSize:11}}>{proj?.task_num}</span>{proj?.expense_type&&<span style={{color:C.muted,fontSize:11}}> · {proj?.expense_type}</span>} <span style={{color:C.text,fontSize:12}}>{proj?.project_name}</span></span>
                         <span>REG <strong>{e.reg_hours}</strong> · OT <strong style={{color:C.amber}}>{e.ot_hours}</strong> · DT <strong style={{color:C.red}}>{e.dt_hours}</strong></span>
                       </div>
                     );
