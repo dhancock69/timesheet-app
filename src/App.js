@@ -694,7 +694,12 @@ function ManagerView({employees,projects,settings}) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.88)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
-
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
+            <button onClick={()=>shiftWeek(-1)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.muted,cursor:"pointer",padding:"2px 10px",fontSize:16,lineHeight:1}}>‹</button>
+            <span style={{color:C.muted,fontSize:13}}>{reviewWeekLabel}</span>
+            <button onClick={()=>shiftWeek(1)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.muted,cursor:"pointer",padding:"2px 10px",fontSize:16,lineHeight:1}}>›</button>
+            {reviewWeekKey!==WEEK_KEY&&<button onClick={()=>{setReviewWS(WS);setSelected(null);setDetail(null);}} style={{background:"none",border:`1px solid ${C.accent}`,borderRadius:6,color:C.accent,cursor:"pointer",padding:"2px 8px",fontSize:11,fontWeight:700}}>Today</button>}
+          </div>
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           <Badge color={submitted.length>0?"green":"amber"}>{submitted.length}/{employees.length} submitted</Badge>
