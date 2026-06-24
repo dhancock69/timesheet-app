@@ -123,9 +123,9 @@ function Select({value,onChange,children,style={}}) {
     {children}
   </select>;
 }
-function Card({children,style={},solid=false}) {
-  return <div style={{background:solid?"rgba(8,4,4,0.88)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
-}
+const Card=React.forwardRef(({children,style={},solid=false},ref)=>{
+  return <div ref={ref} style={{background:solid?"rgba(8,4,4,0.88)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
+});
 function SectionHead({children}) {
   return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
     <div style={{width:3,height:16,background:C.accent,borderRadius:2}}/>{children}
@@ -555,11 +555,13 @@ function ManagerView({employees,projects,settings}) {
     setLoading(false);
   };
 
+  const detailRef=useRef(null);
   const loadDetail=async(empId,tsId)=>{
     const {data:entries}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",tsId);
     const {data:reports}=await supabase.from("daily_reports").select("*").eq("timesheet_id",tsId);
     setDetail({empId,tsId,entries:entries||[],reports:reports||[]});
     setSelected(empId);
+    setTimeout(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);
   };
 
   const handleApprove=async(tsId)=>{
@@ -723,13 +725,11 @@ function ManagerView({employees,projects,settings}) {
               <div style={{fontWeight:900,color:C.text,fontSize:14,marginBottom:2}}>{emp.name}</div>
               <div style={{color:C.gold,fontSize:12,marginBottom:10}}>{emp.emp_no||"No Emp# yet"}</div>
               {sub?<>
-                <Badge color={ts.status==="approved"?"green":"accent"}>{ts.status==="approved"?"✓ Approved":"Submitted"}</Badge>
-                {ts.status==="submitted"&&(
-                  <div style={{display:"flex",gap:8,marginTop:10}}>
-                    <Btn variant="green" small onClick={e=>{e.stopPropagation();handleApprove(ts.id);}}>Approve</Btn>
-                    <Btn variant="danger" small onClick={e=>{e.stopPropagation();setShowReject(ts.id);}}>Reject</Btn>
-                  </div>
-                )}
+                <Badge color={ts.status==="approved"?"green":ts.status==="rejected"?"red":"accent"}>
+                  {ts.status==="approved"?"✓ Approved":ts.status==="rejected"?"✗ Rejected":"● Submitted"}
+                </Badge>
+                {ts.status==="submitted"&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>Click to review →</div>}
+                {ts.status==="approved"&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>Click to view →</div>}
               </>:<Badge color="amber">Pending</Badge>}
             </Card>
           );
@@ -741,7 +741,7 @@ function ManagerView({employees,projects,settings}) {
         const emp=employees.find(e=>e.id===selected);
         const ts=timesheets.find(t=>t.employee_id===selected);
         return(
-          <Card solid style={{marginBottom:24,padding:24}}>
+          <Card solid ref={detailRef} style={{marginBottom:24,padding:24}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
               <h3 style={{margin:0,color:C.text,fontWeight:900}}>{emp?.name} <span style={{color:C.gold,fontWeight:400,fontSize:14}}>#{emp?.emp_no}</span></h3>
               {ts?.status==="submitted"&&(
