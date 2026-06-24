@@ -781,7 +781,7 @@ function ManagerView({employees,projects,settings}) {
                     const proj=projects.find(p=>p.id===e.project_id);
                     return(
                       <div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:C.text,padding:"2px 0"}}>
-                        <span style={{color:C.gold}}>{proj?.project_num} <span style={{color:C.muted,fontSize:11}}>{proj?.task_num}</span>{proj?.expense_type&&<span style={{color:C.muted,fontSize:11}}> · {proj?.expense_type}</span>} <span style={{color:C.text,fontSize:12}}>{proj?.project_name}</span></span>
+                        <span style={{color:C.gold}}>{proj?.project_num}</span><span style={{color:C.muted,fontSize:11}}> · {proj?.task_num}{proj?.expense_type&&` · ${proj.expense_type}`} · </span><span style={{color:C.text,fontSize:12}}>{proj?.project_name}</span>
                         <span>REG <strong>{e.reg_hours}</strong> · OT <strong style={{color:C.amber}}>{e.ot_hours}</strong> · DT <strong style={{color:C.red}}>{e.dt_hours}</strong></span>
                       </div>
                     );
