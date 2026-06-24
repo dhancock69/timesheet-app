@@ -123,8 +123,8 @@ function Select({value,onChange,children,style={}}) {
     {children}
   </select>;
 }
-const Card=React.forwardRef(({children,style={},solid=false},ref)=>{
-  return <div ref={ref} style={{background:solid?"rgba(8,4,4,0.88)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
+const Card=React.forwardRef(({children,style={},solid=false,onClick,},ref)=>{
+  return <div ref={ref} onClick={onClick} style={{background:solid?"rgba(8,4,4,0.88)":"rgba(6,4,4,0.22)",border:`1px solid ${C.border}`,borderRadius:12,...style}}>{children}</div>;
 });
 function SectionHead({children}) {
   return <div style={{color:C.accent,fontWeight:700,fontSize:13,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
