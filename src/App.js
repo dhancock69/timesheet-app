@@ -564,8 +564,9 @@ function ManagerView({employees,projects,settings}) {
 
   const handleApprove=async(tsId)=>{
     await supabase.from("timesheets").update({status:"approved",approved_at:new Date().toISOString()}).eq("id",tsId);
-    setStatus("✓ Timesheet approved!"); loadData();
-    exportTimesheets();
+    const prevSelected=selected; const prevDetail=detail;
+    setStatus("✓ Timesheet approved!"); await loadData();
+    if(prevSelected&&prevDetail){ setSelected(prevSelected); setDetail(prevDetail); }
   };
 
   const handleReject=async(tsId)=>{
@@ -578,44 +579,85 @@ function ManagerView({employees,projects,settings}) {
     loadData();
   };
 
-  const exportTimesheets=()=>{
+  const exportTimesheets=async()=>{
     const submitted=timesheets.filter(t=>t.status==="submitted"||t.status==="approved");
     if(!submitted.length){setStatus("No submitted timesheets to export.");return;}
-    let csv="";
-    submitted.forEach((ts,ei)=>{
-      if(ei>0)csv+="\n\n";
+    setStatus("Building Excel file…");
+
+    // Load all entries and reports for all submitted timesheets
+    const allData=await Promise.all(submitted.map(async ts=>{
+      const {data:entries}=await supabase.from("timesheet_entries").select("*").eq("timesheet_id",ts.id);
+      const {data:reports}=await supabase.from("daily_reports").select("*").eq("timesheet_id",ts.id);
+      return{ts,entries:entries||[],reports:reports||[]};
+    }));
+
+    // Build workbook using SheetJS (loaded via CDN script tag)
+    const XLSX=window.XLSX;
+    if(!XLSX){setStatus("Excel library not loaded. Please refresh and try again.");return;}
+    const wb=XLSX.utils.book_new();
+    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+    const periodStr=weekEnd.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"});
+
+    allData.forEach(({ts,entries,reports})=>{
       const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
-      const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
-      csv+=`=== ${(emp.name||"").toUpperCase()} ===\n`;
-      csv+=`EMPLOYEE NO.,${emp.emp_no||"PENDING"},,,,,,,,EMPLOYEE NAME,${emp.name||""}\n`;
-      csv+=`WEEK/PERIOD ENDING,${weekEnd.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"})},,,,,,,,SUPERVISOR,${settings?.supervisor||"Daniel Hancock"}\n\n`;
-      csv+=`PROJECT #,TASK #,EXPENSE TYPE,PROJECT DESCRIPTION,`;
-      DAYS.forEach(d=>{csv+=`${d.toUpperCase()} REG,${d.toUpperCase()} OT,${d.toUpperCase()} DT,`;});
-      csv+=`TOTAL REG,TOTAL OT,TOTAL DT\n`;
-      csv+=`,,,,`;
-      DAYS.forEach((_,i)=>{csv+=`${excelDate(WS,i)},,,`;});
-      csv+=`,,\n`;
+      const empProjs=projects.filter(p=>entries.some(e=>e.project_id===p.id));
+
+      // Header rows
+      const rows=[];
+      rows.push(["EMPLOYEE NO.",emp.emp_no||"PENDING","","","","","","","","EMPLOYEE NAME",emp.name||""]);
+      rows.push(["WEEK/PERIOD ENDING",periodStr,"","","","","","","","SUPERVISOR",settings?.supervisor||"Daniel Hancock"]);
+      rows.push([]);
+
+      // Column headers
+      const headerRow=["PROJECT #","TASK #","EXPENSE TYPE","PROJECT DESCRIPTION"];
+      DAYS.forEach(d=>{headerRow.push(`${d.toUpperCase()} REG`,`${d.toUpperCase()} OT`,`${d.toUpperCase()} DT`);});
+      headerRow.push("TOTAL REG","TOTAL OT","TOTAL DT");
+      rows.push(headerRow);
+
+      // Date row
+      const dateRow=["","","",""];
+      DAYS.forEach((_,i)=>{
+        const d=new Date(WS); d.setDate(d.getDate()+i);
+        const ds=d.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"});
+        dateRow.push(ds,"","");
+      });
+      dateRow.push("","","");
+      rows.push(dateRow);
+
+      // Project rows
       let gR=0,gO=0,gD=0;
       projects.forEach(proj=>{
+        const hasData=entries.some(e=>e.project_id===proj.id&&(e.reg_hours||e.ot_hours||e.dt_hours));
+        const row=[proj.project_num,proj.task_num,proj.expense_type||"",proj.project_name||""];
         let rR=0,rO=0,rD=0;
-        csv+=`${proj.project_num},${proj.task_num},${proj.expense_type||""},"${proj.project_name||""}",`;
         DAYS.forEach(day=>{
-          const e=detail?.entries?.find(e=>e.project_id===proj.id&&e.day_name===day);
+          const e=entries.find(e=>e.project_id===proj.id&&e.day_name===day);
           const r=parseFloat(e?.reg_hours)||0,o=parseFloat(e?.ot_hours)||0,d=parseFloat(e?.dt_hours)||0;
-          csv+=`${r||""},${o||""},${d||""},`;
+          row.push(r||"",o||"",d||"");
           rR+=r;rO+=o;rD+=d;
         });
+        row.push(rR||"",rO||"",rD||"");
         gR+=rR;gO+=rO;gD+=rD;
-        csv+=`${rR},${rO},${rD}\n`;
+        rows.push(row);
       });
-      csv+=`,,TOTALS,,`;
-      DAYS.forEach(()=>{csv+=`,,,`;});
-      csv+=`${gR},${gO},${gD}\n`;
+
+      // Totals row
+      const totRow=["","","TOTALS",""];
+      DAYS.forEach(()=>{totRow.push("","","");});
+      totRow.push(gR,gO,gD);
+      rows.push(totRow);
+
+      // Create sheet
+      const ws=XLSX.utils.aoa_to_sheet(rows);
+      // Set column widths
+      ws["!cols"]=[{wch:12},{wch:10},{wch:14},{wch:30},...Array(21).fill({wch:8})];
+      const sheetName=(emp.emp_no||emp.name||"Employee").substring(0,31);
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
     });
-    const blob=new Blob([csv],{type:"text/csv"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");a.href=url;a.download=`BIS_Timesheets_${WEEK_KEY}.csv`;a.click();
-    URL.revokeObjectURL(url);
+
+    // Download
+    XLSX.writeFile(wb,`BIS_Timesheets_${WEEK_KEY}.xlsx`);
+    setStatus(`✓ Excel file exported — ${allData.length} employee tab${allData.length>1?"s":""}`);
   };
 
   if(loading) return <div style={{textAlign:"center",padding:60,color:C.muted}}>Loading…</div>;
@@ -745,7 +787,7 @@ function ManagerView({employees,projects,settings}) {
           <h3 style={{margin:"0 0 8px",color:C.text,fontSize:16,fontWeight:900}}>Export & Send</h3>
           <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Exports timesheet in your company format with PROJECT DESCRIPTION column.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-            <Btn variant="primary" onClick={exportTimesheets}>↓ Export Timesheets CSV</Btn>
+            <Btn variant="primary" onClick={exportTimesheets}>↓ Export Timesheets Excel</Btn>
           </div>
           {status&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:8,background:C.greenDim,color:C.green,fontSize:13}}>{status}</div>}
         </Card>
