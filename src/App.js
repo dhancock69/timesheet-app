@@ -544,12 +544,21 @@ function ManagerView({employees,projects,settings}) {
   const [showReject,setShowReject]=useState(null);
   const [timesheets,setTimesheets]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [reviewWS,setReviewWS]=useState(WS);
 
-  useEffect(()=>{ loadData(); },[]);
+  const reviewWeekKey=toDateStr(reviewWS);
+  const reviewWeekLabel=weekLabel(reviewWS);
+
+  const shiftWeek=(dir)=>{
+    const d=new Date(reviewWS); d.setDate(d.getDate()+(dir*7));
+    setReviewWS(d); setSelected(null); setDetail(null);
+  };
+
+  useEffect(()=>{ loadData(); },[reviewWeekKey]);
 
   const loadData=async()=>{
     setLoading(true);
-    const {data:ts}=await supabase.from("timesheets").select("*,profiles(name,emp_no)").eq("week_start",WEEK_KEY);
+    const {data:ts}=await supabase.from("timesheets").select("*,profiles(name,emp_no)").eq("week_start",reviewWeekKey);
     const {data:pto}=await supabase.from("pto_requests").select("*,profiles(name)").eq("status","pending").order("created_at",{ascending:false});
     setTimesheets(ts||[]); setPtoRequests(pto||[]);
     setLoading(false);
@@ -658,7 +667,7 @@ function ManagerView({employees,projects,settings}) {
     });
 
     // Download
-    XLSX.writeFile(wb,`BIS_Timesheets_${WEEK_KEY}.xlsx`);
+    XLSX.writeFile(wb,`BIS_Timesheets_${reviewWeekKey}.xlsx`);
     setStatus(`✓ Excel file exported — ${allData.length} employee tab${allData.length>1?"s":""}`);
   };
 
@@ -685,7 +694,7 @@ function ManagerView({employees,projects,settings}) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.88)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div>
           <h2 style={{margin:0,color:C.text,fontSize:22,fontWeight:900}}>Manager Review</h2>
-          <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>{weekLabel(WS)}</p>
+
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           <Badge color={submitted.length>0?"green":"amber"}>{submitted.length}/{employees.length} submitted</Badge>
