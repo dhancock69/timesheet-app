@@ -28,7 +28,7 @@ function uid() { return Math.random().toString(36).slice(2,9); }
 function todayName() { return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()]; }
 function isWeekday() { const d=new Date().getDay(); return d>=1&&d<=5; }
 function fmt12(t) { const [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; const hh=h%12||12; return `${hh}:${String(m).padStart(2,"0")} ${ap}`; }
-function toDateStr(d) { return d.toISOString().slice(0,10); }
+function toDateStr(d) { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
 
 const WS = weekStart();
 const WEEK_KEY = toDateStr(WS);
