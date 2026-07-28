@@ -17,6 +17,14 @@ function weekStart() {
   const diff=day===0?-6:1-day;
   d.setDate(d.getDate()+diff); d.setHours(0,0,0,0); return d;
 }
+function isConnectionError(msg) {
+  if(!msg) return false;
+  const m=msg.toLowerCase();
+  return m.includes("failed to fetch")||m.includes("networkerror")||m.includes("load failed")||
+    m.includes("connection")||m.includes("timeout")||m.includes("unavailable")||
+    m.includes("502")||m.includes("503")||m.includes("504");
+}
+
 function weekLabel(s) {
   const e=new Date(s); e.setDate(e.getDate()+6);
   const f=d=>d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -145,13 +153,20 @@ function LoginScreen({onLogin}) {
 
   const handleLogin=async()=>{
     setLoading(true); setError("");
-    const {data,error:e}=await supabase.auth.signInWithPassword({email,password});
+    let data,e;
+    try{
+      const res=await supabase.auth.signInWithPassword({email,password});
+      data=res.data; e=res.error;
+    }catch(err){
+      setError(isConnectionError(err.message)
+        ?"😴 The database appears to be sleeping. Please contact your administrator to wake it up at supabase.com."
+        :"Connection error — please check your internet and try again.");
+      setLoading(false);return;
+    }
     if(e){
-      if(e.message?.includes("fetch")||e.message?.includes("network")){
-        setError("Connection error — please check your internet and try again.");
-      } else {
-        setError(e.message);
-      }
+      setError(isConnectionError(e.message)
+        ?"😴 The database appears to be sleeping. Please contact your administrator to wake it up at supabase.com."
+        :e.message);
       setLoading(false);return;
     }
     onLogin(data.user);
@@ -1201,19 +1216,50 @@ export default function App() {
     </div>
   );
 
-  if(appError) return(
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif",padding:24}}>
-      <BeardCanvas/>
-      <div style={{position:"relative",zIndex:1,textAlign:"center",maxWidth:500}}>
-        <div style={{background:C.redDim,border:`1px solid ${C.red}`,borderRadius:14,padding:28,marginBottom:20}}>
-          <div style={{color:C.red,fontWeight:800,fontSize:16,marginBottom:10}}>⚠ App Error</div>
-          <div style={{color:C.text,fontSize:13,lineHeight:1.6,marginBottom:16}}>{appError}</div>
-          <div style={{background:"#0f0f0f",borderRadius:8,padding:"10px 14px",fontSize:11,color:C.muted,textAlign:"left",fontFamily:"monospace",wordBreak:"break-all"}}>{appError}</div>
+  if(appError){
+    const isPause=isConnectionError(appError);
+    return(
+      <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif",padding:24}}>
+        <BeardCanvas/>
+        <div style={{position:"relative",zIndex:1,textAlign:"center",maxWidth:520}}>
+          <div style={{marginBottom:16,fontSize:48}}>{isPause?"😴":"⚠️"}</div>
+          <div style={{background:isPause?"rgba(20,14,0,0.92)":C.redDim,border:`1px solid ${isPause?C.amber:C.red}`,borderRadius:14,padding:28,marginBottom:20}}>
+            {isPause?(
+              <>
+                <div style={{color:C.amber,fontWeight:900,fontSize:18,marginBottom:10}}>Database Sleeping</div>
+                <div style={{color:C.text,fontSize:14,lineHeight:1.7,marginBottom:16}}>
+                  The BIS Timesheet database has gone to sleep due to inactivity.<br/>
+                  This happens automatically on the free Supabase plan after 7 days.
+                </div>
+                <div style={{background:"rgba(0,0,0,0.4)",borderRadius:8,padding:"12px 16px",marginBottom:16,textAlign:"left"}}>
+                  <div style={{color:C.amber,fontWeight:700,fontSize:12,marginBottom:8}}>TO WAKE IT UP:</div>
+                  <div style={{color:C.muted,fontSize:12,lineHeight:1.8}}>
+                    1. Go to <span style={{color:C.accent}}>supabase.com</span> and sign in<br/>
+                    2. Open project <span style={{color:C.gold}}>beard-timesheet</span><br/>
+                    3. Click <span style={{color:C.green,fontWeight:700}}>"Restore project"</span> when prompted<br/>
+                    4. Wait ~60 seconds then refresh this page
+                  </div>
+                </div>
+                <div style={{color:C.muted,fontSize:11}}>
+                  💡 Tip: Upgrade to Supabase Pro ($25/mo) to prevent this from happening.
+                </div>
+              </>
+            ):(
+              <>
+                <div style={{color:C.red,fontWeight:800,fontSize:16,marginBottom:10}}>⚠ Connection Error</div>
+                <div style={{color:C.text,fontSize:13,lineHeight:1.6,marginBottom:12}}>{appError}</div>
+                <div style={{color:C.muted,fontSize:11}}>Try refreshing the page. If the problem persists, contact your administrator.</div>
+              </>
+            )}
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+            <Btn variant="primary" onClick={()=>window.location.reload()}>↻ Refresh Page</Btn>
+            <Btn variant="ghost" onClick={()=>{setAppError(null);setLoading(false);setUser(null);setProfile(null);}}>← Back to Login</Btn>
+          </div>
         </div>
-        <Btn variant="primary" onClick={()=>{setAppError(null);setLoading(false);setUser(null);setProfile(null);}}>← Back to Login</Btn>
       </div>
-    </div>
-  );
+    );
+  }
 
   if(!user||!profile) return <LoginScreen onLogin={handleLogin}/>;
 
