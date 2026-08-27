@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.0  
-**Date:** August 2026  
+**Version:** 1.1  
+**Date:** August 27, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -532,6 +532,53 @@ A shared demonstration account is maintained for upper management presentations 
 | Email | `demo@beardint.com` |
 | Role | employee (or manager as needed for demos) |
 | Purpose | Pre-populated with sample timesheet data for demonstrations |
+
+---
+
+## 16.0 Current Status (as of August 27, 2026)
+
+### 16.1 Shipped / In Production
+
+- Full React + Supabase app deployed on Vercel, auto-deploying from `main`
+- Auth with role-based access (employee, manager, admin)
+- Time entry with REG/OT/DT per project code per day
+- Manager Review workflow with week navigation (‹/› arrows) and approval/rejection
+- PTO request and tracking system (accrual math removed — accrual is tracked externally by BIS HR)
+- Excel export via SheetJS, multi-tab, matching the BIS payroll template
+- Admin Console: Team, Projects, Locations, PTO History, Settings tabs
+- Beard-branded UI with rotating BIM background images and diagonal watermark
+- Supabase "Database Sleeping" detection/recovery screen
+- TDZ black-screen crash, save/race-condition, timezone, and Card `onClick` forwarding bugs all resolved
+- Demo account strategy (`demo@beardint.com`) established for the upper-management presentation
+- Jose Barron and James Pugh actively using the platform day-to-day
+
+### 16.2 Known Outstanding
+
+- Confirm Jose and James show up correctly in Manager/Admin views (depends on self-registration path used)
+- Upper-management presentation itself — not yet delivered
+- Demo account population with realistic sample data — not yet confirmed complete
+- Notification system (10 AM Friday reminder, configurable 1 PM daily reminder) — designed but not confirmed fully implemented
+
+### 16.3 Wishlist / Not Started
+
+- Email submission directly to payroll
+- Mobile layout optimization
+- Daily report export improvements
+- Phase 3 items from Section 12.0 (demo/read-only mode, date-range export, etc.)
+
+---
+
+## 17.0 Continuing Development with Claude Code
+
+Claude Code sessions (terminal, desktop, or the "Open Claude Code" button in claude.ai) do **not** inherit history from claude.ai chat conversations — each is a fresh session with no transcript carried over. This spec file is the persistent bridge between sessions.
+
+**To resume work in Claude Code:**
+
+1. Open Claude Code in the `timesheet-app` repo directory (via terminal `claude`, the desktop Code tab, or the "Open Claude Code" button).
+2. First message: *"Read BIS_Timesheet_Platform_Spec.md at the repo root for full project context, then let's continue."*
+3. Claude Code reads the file directly from disk and reconstructs schema, component structure, known issues, and current status from Sections 1–16 above.
+
+**Keeping this file current:** After any significant session (new feature, bug fix, schema change), ask whichever Claude you're working with to append updates to Sections 16.1–16.3 and bump the Version/Date in the header, then commit the change alongside the code change.
 
 ---
 
