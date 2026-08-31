@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.1  
-**Date:** August 27, 2026  
+**Version:** 1.2  
+**Date:** August 31, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -77,6 +77,7 @@ Extends Supabase `auth.users`. Created automatically on first sign-up via trigge
 | `is_manager` | boolean | Grants Manager Review + Admin tab access |
 | `email` | text | Login email |
 | `default_location` | text | Default location pre-selected on timesheet |
+| `timesheet_file_location` | text | Network path/link to this employee's archived timesheet files (admin-entered, reference only) |
 | `created_at` | timestamptz | Auto-set on insert |
 
 ---
@@ -535,7 +536,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of August 27, 2026)
+## 16.0 Current Status (as of August 31, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -551,9 +552,13 @@ A shared demonstration account is maintained for upper management presentations 
 - TDZ black-screen crash, save/race-condition, timezone, and Card `onClick` forwarding bugs all resolved
 - Demo account strategy (`demo@beardint.com`) established for the upper-management presentation
 - Jose Barron and James Pugh actively using the platform day-to-day
+- Excel export bug fixed: per-employee sheets were listing every company project as a row (mostly blank); now only lists projects the employee actually logged hours against (`empProjs`) — found while starting Excel-export testing with Daniel's own submitted entries (low team testing participation so far)
+- Added `timesheet_file_location` field to employee profiles (Admin Console → Team → edit) — free-text network path/link to that employee's archived timesheet files, reference-only, not wired into export logic. **Requires manual Supabase schema change before this field will save** — see 16.2
 
 ### 16.2 Known Outstanding
 
+- **Run in Supabase SQL editor:** `ALTER TABLE profiles ADD COLUMN timesheet_file_location text;` — required for the new admin field above to persist (app only holds the anon key; schema changes can't be made from Claude Code)
+- Excel export testing — now unblocked (submitted-timesheet filter + project-row fix both in place); next step is to actually submit a timesheet as Daniel and run a real export to confirm output looks right
 - Confirm Jose and James show up correctly in Manager/Admin views (depends on self-registration path used)
 - Upper-management presentation itself — not yet delivered
 - Demo account population with realistic sample data — not yet confirmed complete

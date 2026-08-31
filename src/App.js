@@ -652,8 +652,7 @@ function ManagerView({employees,projects,settings}) {
 
       // Project rows
       let gR=0,gO=0,gD=0;
-      projects.forEach(proj=>{
-        const hasData=entries.some(e=>e.project_id===proj.id&&(e.reg_hours||e.ot_hours||e.dt_hours));
+      empProjs.forEach(proj=>{
         const row=[proj.project_num,proj.task_num,proj.expense_type||"",proj.project_name||""];
         let rR=0,rO=0,rD=0;
         DAYS.forEach(day=>{
@@ -876,7 +875,8 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       emp_no:editEmp.emp_no||null,
       role:editEmp.role,
       is_manager:!!editEmp.is_manager,
-      default_location:editEmp.default_location||null
+      default_location:editEmp.default_location||null,
+      timesheet_file_location:editEmp.timesheet_file_location||null
     }).eq("id",editEmp.id);
     if(error){flash("Save error: "+error.message);return;}
     setEmployees(p=>p.map(e=>e.id===editEmp.id?{...e,...editEmp}:e));
@@ -985,6 +985,10 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                       })}
                     </div>
                     <p style={{color:C.muted,fontSize:11,marginTop:6}}>Sets the pre-filled location on this employee's timesheet each day.</p>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TIMESHEET FILE LOCATION</label>
+                    <Input value={editEmp.timesheet_file_location||""} onChange={v=>setEditEmp(p=>({...p,timesheet_file_location:v}))} placeholder="Network path or link to archived timesheet files"/>
                   </div>
                   <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",marginBottom:12}}>
                     <input type="checkbox" checked={!!editEmp.is_manager} onChange={e=>setEditEmp(p=>({...p,is_manager:e.target.checked}))} style={{width:16,height:16}}/>
