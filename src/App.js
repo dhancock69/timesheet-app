@@ -12,6 +12,11 @@ const C = {
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
+const RECORDS_BUCKET = "timesheet-records";
+function storagePath(folder,filename) {
+  const f=(folder||"").trim().replace(/^\/+|\/+$/g,"");
+  return f?`${f}/${filename}`:filename;
+}
 function weekStart() {
   const d=new Date(); const day=d.getDay();
   const diff=day===0?-6:1-day;
@@ -608,7 +613,7 @@ function ManagerView({employees,projects,settings}) {
   const exportTimesheets=async()=>{
     const submitted=timesheets.filter(t=>t.status==="submitted"||t.status==="approved");
     if(!submitted.length){setStatus("No submitted timesheets to export.");return;}
-    setStatus("Building Excel file…");
+    setStatus("Building Excel files…");
 
     // Load all entries and reports for all submitted timesheets
     const allData=await Promise.all(submitted.map(async ts=>{
@@ -617,40 +622,35 @@ function ManagerView({employees,projects,settings}) {
       return{ts,entries:entries||[],reports:reports||[]};
     }));
 
-    // Build workbook using SheetJS (loaded via CDN script tag)
     const XLSX=window.XLSX;
     if(!XLSX){setStatus("Excel library not loaded. Please refresh and try again.");return;}
-    const wb=XLSX.utils.book_new();
-    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+
+    // Dates are anchored to the week actually being reviewed (reviewWS), not "today"
+    const weekEnd=new Date(reviewWS); weekEnd.setDate(weekEnd.getDate()+6);
     const periodStr=weekEnd.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"});
+    const weekEndKey=toDateStr(weekEnd);
+    const TS_COLS=[{wch:12},{wch:10},{wch:14},{wch:30},...Array(21).fill({wch:8})];
 
-    allData.forEach(({ts,entries,reports})=>{
-      const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
+    const buildTimesheetRows=(emp,entries)=>{
       const empProjs=projects.filter(p=>entries.some(e=>e.project_id===p.id));
-
-      // Header rows
       const rows=[];
       rows.push(["EMPLOYEE NO.",emp.emp_no||"PENDING","","","","","","","","EMPLOYEE NAME",emp.name||""]);
       rows.push(["WEEK/PERIOD ENDING",periodStr,"","","","","","","","SUPERVISOR",settings?.supervisor||"Daniel Hancock"]);
       rows.push([]);
 
-      // Column headers
       const headerRow=["PROJECT #","TASK #","EXPENSE TYPE","PROJECT DESCRIPTION"];
       DAYS.forEach(d=>{headerRow.push(`${d.toUpperCase()} REG`,`${d.toUpperCase()} OT`,`${d.toUpperCase()} DT`);});
       headerRow.push("TOTAL REG","TOTAL OT","TOTAL DT");
       rows.push(headerRow);
 
-      // Date row
       const dateRow=["","","",""];
       DAYS.forEach((_,i)=>{
-        const d=new Date(WS); d.setDate(d.getDate()+i);
-        const ds=d.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"});
-        dateRow.push(ds,"","");
+        const d=new Date(reviewWS); d.setDate(d.getDate()+i);
+        dateRow.push(d.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"}),"","");
       });
       dateRow.push("","","");
       rows.push(dateRow);
 
-      // Project rows
       let gR=0,gO=0,gD=0;
       empProjs.forEach(proj=>{
         const row=[proj.project_num,proj.task_num,proj.expense_type||"",proj.project_name||""];
@@ -666,23 +666,67 @@ function ManagerView({employees,projects,settings}) {
         rows.push(row);
       });
 
-      // Totals row
       const totRow=["","","TOTALS",""];
       DAYS.forEach(()=>{totRow.push("","","");});
       totRow.push(gR,gO,gD);
       rows.push(totRow);
+      return rows;
+    };
 
-      // Create sheet
-      const ws=XLSX.utils.aoa_to_sheet(rows);
-      // Set column widths
-      ws["!cols"]=[{wch:12},{wch:10},{wch:14},{wch:30},...Array(21).fill({wch:8})];
-      const sheetName=(emp.emp_no||emp.name||"Employee").substring(0,31);
-      XLSX.utils.book_append_sheet(wb,ws,sheetName);
+    // Combined multi-tab workbook — one tab per employee (downloaded)
+    const combinedWb=XLSX.utils.book_new();
+    allData.forEach(({ts,entries})=>{
+      const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
+      const ws=XLSX.utils.aoa_to_sheet(buildTimesheetRows(emp,entries));
+      ws["!cols"]=TS_COLS;
+      XLSX.utils.book_append_sheet(combinedWb,ws,(emp.emp_no||emp.name||"Employee").substring(0,31));
     });
+    XLSX.writeFile(combinedWb,`BIS_VDC_Timesheets_${weekEndKey}.xlsx`);
 
-    // Download
-    XLSX.writeFile(wb,`BIS_Timesheets_${reviewWeekKey}.xlsx`);
-    setStatus(`✓ Excel file exported — ${allData.length} employee tab${allData.length>1?"s":""}`);
+    // Daily reports workbook — single tab, all employees (downloaded)
+    const reportRows=[["EMPLOYEE","EMP #","DAY","DATE","LOCATION","NOTES","DAILY REPORT"]];
+    allData.forEach(({ts,reports})=>{
+      const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
+      DAYS.forEach((day,i)=>{
+        const rep=(reports||[]).find(r=>r.day_name===day);
+        if(!rep||(!rep.location&&!rep.notes&&!rep.report_text)) return;
+        const d=new Date(reviewWS); d.setDate(d.getDate()+i);
+        reportRows.push([emp.name||"",emp.emp_no||"",day,d.toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"}),rep.location||"",rep.notes||"",rep.report_text||""]);
+      });
+    });
+    const reportsWb=XLSX.utils.book_new();
+    const reportsWs=XLSX.utils.aoa_to_sheet(reportRows);
+    reportsWs["!cols"]=[{wch:20},{wch:12},{wch:11},{wch:11},{wch:14},{wch:26},{wch:60}];
+    XLSX.utils.book_append_sheet(reportsWb,reportsWs,"Daily Reports");
+    XLSX.writeFile(reportsWb,`BIS_VDC_DailyReports_${weekEndKey}.xlsx`);
+
+    // Archive record copies to Supabase Storage
+    setStatus("Archiving record copies…");
+    let archived=0; const skipped=[];
+    for(const {ts,entries} of allData){
+      const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
+      if(!emp.timesheet_file_location){ skipped.push(emp.name||emp.emp_no||"Unknown employee"); continue; }
+      const wb=XLSX.utils.book_new();
+      const ws=XLSX.utils.aoa_to_sheet(buildTimesheetRows(emp,entries));
+      ws["!cols"]=TS_COLS;
+      XLSX.utils.book_append_sheet(wb,ws,(emp.emp_no||emp.name||"Employee").substring(0,31));
+      const blob=new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const path=storagePath(emp.timesheet_file_location,`BIS_VDC_Timesheet_${emp.emp_no||emp.id}_${weekEndKey}.xlsx`);
+      const{error}=await supabase.storage.from(RECORDS_BUCKET).upload(path,blob,{upsert:true,contentType:blob.type});
+      if(error) skipped.push(`${emp.name||emp.emp_no} (${error.message})`); else archived++;
+    }
+
+    let reportArchiveMsg;
+    if(settings?.daily_report_file_location){
+      const blob=new Blob([XLSX.write(reportsWb,{bookType:"xlsx",type:"array"})],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const path=storagePath(settings.daily_report_file_location,`BIS_VDC_DailyReports_${weekEndKey}.xlsx`);
+      const{error}=await supabase.storage.from(RECORDS_BUCKET).upload(path,blob,{upsert:true,contentType:blob.type});
+      reportArchiveMsg=error?` Daily report archive failed: ${error.message}.`:" Daily report archived.";
+    } else {
+      reportArchiveMsg=" Daily report archive skipped (no folder set in Settings).";
+    }
+
+    setStatus(`✓ Exported ${allData.length} employee tab${allData.length>1?"s":""} + daily reports. Archived ${archived}/${allData.length} employee record${allData.length>1?"s":""} to Storage.${skipped.length?` Skipped: ${skipped.join(", ")}.`:""}${reportArchiveMsg}`);
   };
 
   if(loading) return <div style={{textAlign:"center",padding:60,color:C.muted}}>Loading…</div>;
@@ -813,7 +857,7 @@ function ManagerView({employees,projects,settings}) {
       {submitted.length>0&&(
         <Card solid style={{padding:24}}>
           <h3 style={{margin:"0 0 8px",color:C.text,fontSize:16,fontWeight:900}}>Export & Send</h3>
-          <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Exports timesheet in your company format with PROJECT DESCRIPTION column.</p>
+          <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Downloads BIS_VDC_Timesheets and BIS_VDC_DailyReports for this week, and archives a record copy per employee (plus one daily report copy) to Storage.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             <Btn variant="primary" onClick={exportTimesheets}>↓ Export Timesheets Excel</Btn>
           </div>
@@ -988,7 +1032,8 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                   </div>
                   <div style={{marginBottom:12}}>
                     <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TIMESHEET FILE LOCATION</label>
-                    <Input value={editEmp.timesheet_file_location||""} onChange={v=>setEditEmp(p=>({...p,timesheet_file_location:v}))} placeholder="Network path or link to archived timesheet files"/>
+                    <Input value={editEmp.timesheet_file_location||""} onChange={v=>setEditEmp(p=>({...p,timesheet_file_location:v}))} placeholder="e.g. VDC/Timesheets/Barron_Jose"/>
+                    <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder this employee's weekly timesheet record is archived to on export.</p>
                   </div>
                   <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",marginBottom:12}}>
                     <input type="checkbox" checked={!!editEmp.is_manager} onChange={e=>setEditEmp(p=>({...p,is_manager:e.target.checked}))} style={{width:16,height:16}}/>
@@ -1148,6 +1193,11 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
               <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>SUPERVISOR NAME</label><Input value={settingsForm.supervisor||""} onChange={v=>setSettingsForm(p=>({...p,supervisor:v}))}/></div>
               <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>MANAGER EMAIL</label><Input value={settingsForm.manager_email||""} onChange={v=>setSettingsForm(p=>({...p,manager_email:v}))}/></div>
               <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>PAYROLL EMAIL</label><Input value={settingsForm.payroll_email||""} onChange={v=>setSettingsForm(p=>({...p,payroll_email:v}))}/></div>
+              <div>
+                <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>DAILY REPORT FILE LOCATION</label>
+                <Input value={settingsForm.daily_report_file_location||""} onChange={v=>setSettingsForm(p=>({...p,daily_report_file_location:v}))} placeholder="e.g. VDC/DailyReports"/>
+                <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder the company-wide weekly daily-report file is archived to on export.</p>
+              </div>
             </div>
             <div style={{marginTop:20}}><Btn variant="primary" onClick={saveSettings}>Save Settings</Btn></div>
           </Card>

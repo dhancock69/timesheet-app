@@ -1,7 +1,7 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.2  
+**Version:** 1.3  
 **Date:** August 31, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
@@ -183,7 +183,22 @@ Key-value store for global application settings.
 | `key` | text (PK) | Setting name |
 | `value` | text | Setting value |
 
-**Known keys:** `supervisor`, `company_name`, `reminder_time`, `reminder_days`, `locations`
+**Known keys:** `supervisor`, `company_name`, `reminder_time`, `reminder_days`, `locations`, `manager_email`, `payroll_email`, `daily_report_file_location` (Storage folder for the weekly all-employee daily report archive — see 5.9)
+
+---
+
+### 5.9 Supabase Storage: `timesheet-records` bucket
+
+Holds archived record copies of weekly exports, written by `exportTimesheets()` in `ManagerView` on every export.
+
+| Object path | Contents |
+|---|---|
+| `{profiles.timesheet_file_location}/BIS_VDC_Timesheet_{emp_no}_{weekEndDate}.xlsx` | One employee's single-tab weekly timesheet |
+| `{app_settings.daily_report_file_location}/BIS_VDC_DailyReports_{weekEndDate}.xlsx` | All-employee daily report file for that week |
+
+Each employee's `timesheet_file_location` (profiles column, admin-editable) is the destination *subfolder* inside this bucket — not a real network path. If an employee's field is empty, their record is skipped on archive (reported in the export status message). Same for `daily_report_file_location` — if unset in Settings, the daily report archive step is skipped.
+
+**Required manual setup (Supabase dashboard):** create the `timesheet-records` bucket, then add `storage.objects` policies granting INSERT/UPDATE/SELECT to users where `profiles.role='admin'` or `profiles.is_manager=true`.
 
 ---
 
@@ -347,12 +362,13 @@ Props: `{ employees, projects, settings }`
 
 **Reject flow:** Opens rejection note input. Updates status to `rejected` with note stored in `rejection_note` column.
 
-**Excel Export:**
+**Excel Export** (`exportTimesheets()`, triggered by the "↓ Export Timesheets Excel" button):
 - Uses `window.XLSX` (SheetJS loaded via CDN in `index.html`)
-- Exports all submitted + approved timesheets for the selected week
-- One tab per employee, named by `emp_no`
-- BIS payroll format: Employee No, Week Ending, Supervisor header rows; PROJECT #, TASK #, EXPENSE TYPE, PROJECT DESCRIPTION columns; daily REG/OT/DT; row totals
-- Filename: `BIS_Timesheets_YYYY-MM-DD.xlsx`
+- Operates on all submitted + approved timesheets for the currently-reviewed week (`reviewWS`, navigable via ‹/› — export dates are anchored to this, not to "today")
+- Produces two downloaded files plus per-record archive copies in Supabase Storage (see 5.9):
+  1. **`BIS_VDC_Timesheets_{weekEndDate}.xlsx`** — one tab per employee, named by `emp_no`. BIS payroll format: Employee No, Week Ending, Supervisor header rows; PROJECT #, TASK #, EXPENSE TYPE, PROJECT DESCRIPTION columns (only projects the employee logged hours against); daily REG/OT/DT; row totals.
+  2. **`BIS_VDC_DailyReports_{weekEndDate}.xlsx`** — single tab, all employees for the week, one row per employee per day that has a location, notes, or report entry.
+- Also uploads: one single-tab timesheet workbook per employee to `{profiles.timesheet_file_location}/...` in the `timesheet-records` bucket, and one copy of the daily-report workbook to `{app_settings.daily_report_file_location}/...`. Employees/settings with no folder configured are skipped and listed in the status message.
 
 ---
 
@@ -553,12 +569,17 @@ A shared demonstration account is maintained for upper management presentations 
 - Demo account strategy (`demo@beardint.com`) established for the upper-management presentation
 - Jose Barron and James Pugh actively using the platform day-to-day
 - Excel export bug fixed: per-employee sheets were listing every company project as a row (mostly blank); now only lists projects the employee actually logged hours against (`empProjs`) — found while starting Excel-export testing with Daniel's own submitted entries (low team testing participation so far)
-- Added `timesheet_file_location` field to employee profiles (Admin Console → Team → edit) — free-text network path/link to that employee's archived timesheet files, reference-only, not wired into export logic. **Requires manual Supabase schema change before this field will save** — see 16.2
+- Excel export date bug fixed: date row and "week/period ending" header were computed from the app-load week instead of the reviewed week (`reviewWS`), so exporting a past/future week (via ‹/›) showed the wrong dates — now anchored correctly
+- Added `timesheet_file_location` field to employee profiles (Admin Console → Team → edit) — Supabase Storage subfolder where that employee's weekly timesheet record archives to. Schema change applied (`ALTER TABLE profiles ADD COLUMN timesheet_file_location text;` — run 2026-08-31)
+- Added `daily_report_file_location` global setting (Admin Console → Settings) — Storage subfolder for the weekly all-employee daily report archive. No schema change needed (generic `app_settings` key)
+- Excel export now produces two downloaded files: `BIS_VDC_Timesheets_{weekEndDate}.xlsx` (one tab per employee, hours) and `BIS_VDC_DailyReports_{weekEndDate}.xlsx` (single tab, all employees, location/notes/report text) — daily report content was previously fetched but silently discarded
+- Export also archives a record copy per employee (single-tab timesheet) plus one daily-report copy to the `timesheet-records` Supabase Storage bucket, using the folder fields above. Employees/settings left blank are skipped and reported in the export status message
 
 ### 16.2 Known Outstanding
 
-- **Run in Supabase SQL editor:** `ALTER TABLE profiles ADD COLUMN timesheet_file_location text;` — required for the new admin field above to persist (app only holds the anon key; schema changes can't be made from Claude Code)
-- Excel export testing — now unblocked (submitted-timesheet filter + project-row fix both in place); next step is to actually submit a timesheet as Daniel and run a real export to confirm output looks right
+- **Manual Supabase setup still needed:** create the `timesheet-records` Storage bucket and add `storage.objects` policies granting INSERT/UPDATE/SELECT to managers/admins (see 5.9) — Storage archiving will fail until this exists
+- **Fill in folder fields:** each employee needs `timesheet_file_location` set (Admin → Team → edit) and Settings needs `daily_report_file_location` set, or those archive steps are skipped
+- Excel export testing — code-level blockers cleared (submitted-timesheet filter, project-row fix, date-anchoring fix, daily report file all in place); next step is to actually submit a timesheet as Daniel, run a real export, and confirm both downloaded files and the Storage archive copies look right
 - Confirm Jose and James show up correctly in Manager/Admin views (depends on self-registration path used)
 - Upper-management presentation itself — not yet delivered
 - Demo account population with realistic sample data — not yet confirmed complete
@@ -568,7 +589,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 - Email submission directly to payroll
 - Mobile layout optimization
-- Daily report export improvements
+- Surfacing archived Storage record links back in the UI (e.g. a "view record" link on the employee card) — not built, archiving is currently write-only
 - Phase 3 items from Section 12.0 (demo/read-only mode, date-range export, etc.)
 
 ---
