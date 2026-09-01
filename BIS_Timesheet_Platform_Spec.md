@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.3  
-**Date:** August 31, 2026  
+**Version:** 1.4  
+**Date:** September 1, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -198,7 +198,7 @@ Holds archived record copies of weekly exports, written by `exportTimesheets()` 
 
 Each employee's `timesheet_file_location` (profiles column, admin-editable) is the destination *subfolder* inside this bucket — not a real network path. If an employee's field is empty, their record is skipped on archive (reported in the export status message). Same for `daily_report_file_location` — if unset in Settings, the daily report archive step is skipped.
 
-**Required manual setup (Supabase dashboard):** create the `timesheet-records` bucket, then add `storage.objects` policies granting INSERT/UPDATE/SELECT to users where `profiles.role='admin'` or `profiles.is_manager=true`.
+**Manual setup complete:** the `timesheet-records` bucket exists with 3 `storage.objects` policies (INSERT/UPDATE/SELECT) granting access to users where `profiles.role='admin'` or `profiles.is_manager=true` — confirmed in Supabase dashboard 2026-09-01.
 
 ---
 
@@ -552,7 +552,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of August 31, 2026)
+## 16.0 Current Status (as of September 1, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -574,12 +574,13 @@ A shared demonstration account is maintained for upper management presentations 
 - Added `daily_report_file_location` global setting (Admin Console → Settings) — Storage subfolder for the weekly all-employee daily report archive. No schema change needed (generic `app_settings` key)
 - Excel export now produces two downloaded files: `BIS_VDC_Timesheets_{weekEndDate}.xlsx` (one tab per employee, hours) and `BIS_VDC_DailyReports_{weekEndDate}.xlsx` (single tab, all employees, location/notes/report text) — daily report content was previously fetched but silently discarded
 - Export also archives a record copy per employee (single-tab timesheet) plus one daily-report copy to the `timesheet-records` Supabase Storage bucket, using the folder fields above. Employees/settings left blank are skipped and reported in the export status message
+- `timesheet-records` Storage bucket + INSERT/UPDATE/SELECT policies for managers/admins confirmed present in Supabase (see 5.9) — Storage archiving is unblocked
+
+- Folder fields filled in: employee `timesheet_file_location` values set (Admin → Team) and `daily_report_file_location` set (Admin → Settings) — Storage archiving is no longer skipped
+- `manager_email` and `payroll_email` (Admin → Settings) filled in; `payroll_email` holds two recipients separated by `;` — note for whenever "email submission directly to payroll" (16.3) is built: split on `;` for multiple recipients. Neither field is consumed by any code yet, so this is safe as-is
+- Excel export tested end-to-end (2026-09-01): submitted a real timesheet, approved it, ran export as manager. Both downloaded files were correct and both Storage archive copies landed in `timesheet-records`. One issue found and fixed along the way: `timesheet_file_location` had been set to a real Windows/OneDrive filesystem path instead of a short Storage folder name, so the archive silently "succeeded" (200 from Supabase) but nested the file under an unusable path built from that literal string. `storagePath()` in `src/App.js` now sanitizes the folder value (backslashes → forward slashes, strips a leading drive letter) as a safety net, and the Team-edit and Settings forms show an inline warning (`looksLikeLocalPath()`) when the typed value looks like a local path rather than a Storage folder name
 
 ### 16.2 Known Outstanding
-
-- **Manual Supabase setup still needed:** create the `timesheet-records` Storage bucket and add `storage.objects` policies granting INSERT/UPDATE/SELECT to managers/admins (see 5.9) — Storage archiving will fail until this exists
-- **Fill in folder fields:** each employee needs `timesheet_file_location` set (Admin → Team → edit) and Settings needs `daily_report_file_location` set, or those archive steps are skipped
-- Excel export testing — code-level blockers cleared (submitted-timesheet filter, project-row fix, date-anchoring fix, daily report file all in place); next step is to actually submit a timesheet as Daniel, run a real export, and confirm both downloaded files and the Storage archive copies look right
 - Confirm Jose and James show up correctly in Manager/Admin views (depends on self-registration path used)
 - Upper-management presentation itself — not yet delivered
 - Demo account population with realistic sample data — not yet confirmed complete

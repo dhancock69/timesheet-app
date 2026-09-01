@@ -13,8 +13,20 @@ const C = {
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_LOCATIONS = ["Office","Jobsite","Remote","Shop","Other"];
 const RECORDS_BUCKET = "timesheet-records";
+function sanitizeFolder(folder) {
+  let f=(folder||"").trim();
+  f=f.replace(/\\/g,"/");            // backslashes -> forward slashes (Windows paths)
+  f=f.replace(/^[A-Za-z]:\/?/,"");   // strip a leading drive letter like "C:/"
+  f=f.replace(/^\/+|\/+$/g,"");      // strip leading/trailing slashes
+  f=f.replace(/\/+/g,"/");           // collapse repeated slashes
+  return f;
+}
+function looksLikeLocalPath(folder) {
+  const f=folder||"";
+  return /^[A-Za-z]:[\\/]/.test(f) || f.includes("\\") || /^(\/|~)/.test(f);
+}
 function storagePath(folder,filename) {
-  const f=(folder||"").trim().replace(/^\/+|\/+$/g,"");
+  const f=sanitizeFolder(folder);
   return f?`${f}/${filename}`:filename;
 }
 function weekStart() {
@@ -1033,7 +1045,11 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                   <div style={{marginBottom:12}}>
                     <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TIMESHEET FILE LOCATION</label>
                     <Input value={editEmp.timesheet_file_location||""} onChange={v=>setEditEmp(p=>({...p,timesheet_file_location:v}))} placeholder="e.g. VDC/Timesheets/Barron_Jose"/>
-                    <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder this employee's weekly timesheet record is archived to on export.</p>
+                    {looksLikeLocalPath(editEmp.timesheet_file_location)?(
+                      <p style={{color:C.amber,fontSize:11,marginTop:6}}>⚠ This looks like a computer file path, not a Storage folder name. Use a short path like <b>VDC/Timesheets/Barron_Jose</b> — not a Windows/OneDrive path.</p>
+                    ):(
+                      <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder this employee's weekly timesheet record is archived to on export.</p>
+                    )}
                   </div>
                   <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",marginBottom:12}}>
                     <input type="checkbox" checked={!!editEmp.is_manager} onChange={e=>setEditEmp(p=>({...p,is_manager:e.target.checked}))} style={{width:16,height:16}}/>
@@ -1196,7 +1212,11 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
               <div>
                 <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>DAILY REPORT FILE LOCATION</label>
                 <Input value={settingsForm.daily_report_file_location||""} onChange={v=>setSettingsForm(p=>({...p,daily_report_file_location:v}))} placeholder="e.g. VDC/DailyReports"/>
-                <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder the company-wide weekly daily-report file is archived to on export.</p>
+                {looksLikeLocalPath(settingsForm.daily_report_file_location)?(
+                  <p style={{color:C.amber,fontSize:11,marginTop:6}}>⚠ This looks like a computer file path, not a Storage folder name. Use a short path like <b>VDC/DailyReports</b> — not a Windows/OneDrive path.</p>
+                ):(
+                  <p style={{color:C.muted,fontSize:11,marginTop:6}}>Storage folder the company-wide weekly daily-report file is archived to on export.</p>
+                )}
               </div>
             </div>
             <div style={{marginTop:20}}><Btn variant="primary" onClick={saveSettings}>Save Settings</Btn></div>
