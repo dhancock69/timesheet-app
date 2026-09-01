@@ -183,7 +183,7 @@ Key-value store for global application settings.
 | `key` | text (PK) | Setting name |
 | `value` | text | Setting value |
 
-**Known keys:** `supervisor`, `company_name`, `reminder_time`, `reminder_days`, `locations`, `manager_email`, `payroll_email`, `daily_report_file_location` (Storage folder for the weekly all-employee daily report archive — see 5.9)
+**Known keys:** `supervisor`, `company_name`, `locations`, `manager_email`, `payroll_email`, `daily_report_file_location` (Storage folder for the weekly all-employee daily report archive — see 5.9), `reminder_last_sent_date` (dedup marker for the daily reminder cron — see 5.10). `reminder_time`/`reminder_days` were originally listed here but are vestigial — nothing in `App.js` ever reads or writes them (the in-app "🔔 Reminders" extra-reminder dropdown only holds local component state and isn't persisted); the real schedule is now hardcoded in 5.10 instead.
 
 ---
 
@@ -199,6 +199,24 @@ Holds archived record copies of weekly exports, written by `exportTimesheets()` 
 Each employee's `timesheet_file_location` (profiles column, admin-editable) is the destination *subfolder* inside this bucket — not a real network path. If an employee's field is empty, their record is skipped on archive (reported in the export status message). Same for `daily_report_file_location` — if unset in Settings, the daily report archive step is skipped.
 
 **Manual setup complete:** the `timesheet-records` bucket exists with 3 `storage.objects` policies (INSERT/UPDATE/SELECT) granting access to users where `profiles.role='admin'` or `profiles.is_manager=true` — confirmed in Supabase dashboard 2026-09-01.
+
+---
+
+### 5.10 Daily Reminder Cron (`api/daily-reminder.js`)
+
+A Vercel Cron job (`vercel.json` → `crons`) hits `/api/daily-reminder` once daily, weekdays only. The function itself decides whether to actually send — it checks the current time in `America/Chicago` and no-ops (200, not an error) if it isn't yet 1:30 PM local or a reminder already went out today (tracked via the `reminder_last_sent_date` app_settings key).
+
+**Cron schedule:** `30 19 * * 1-5` (19:30 UTC = 1:30 PM CST). During Central Daylight Time (~8 months/year) this fires at 2:30 PM local instead of 1:30 PM — chosen deliberately so the single daily Vercel Hobby-tier invocation always lands *after* the target time (and still sends, just late) rather than *before* it (which would skip the day entirely, since Hobby only fires once/day). If this project is confirmed to be on Vercel Pro, this can be tightened to a `*/15 13-15 * * 1-5` schedule for exact-minute precision — the function's own time/dedup checks already make repeated same-day invocations safe.
+
+**Eligibility (who gets emailed):** every `profiles` row with an email, for the current weekday, *excluding* anyone whose timesheet for the current week is already `submitted`/`approved`, who already logged hours (`timesheet_entries` for today's `day_name` with reg/ot/dt > 0), or who has an `approved` `pto_requests` row covering today.
+
+**Required env vars (Vercel → Settings → Environment Variables, server-side only):**
+- `SUPABASE_SERVICE_ROLE_KEY` — bypasses RLS so the function can read across all employees (reuses `REACT_APP_SUPABASE_URL` for the project URL)
+- `RESEND_API_KEY` — Resend account API key
+- `REMINDER_FROM_EMAIL` — sender address; **must be on a domain verified in Resend via DNS**, or emails to real employees will fail (Resend's sandbox domain only delivers to the account owner's own address)
+- `CRON_SECRET` — random string; Vercel auto-attaches it as `Authorization: Bearer <value>` on cron-triggered requests, and the function rejects anything else
+
+**Status as of 2026-09-01:** code written and deployed, but env vars have not yet been added in Vercel and no domain has been verified in Resend — reminders will not actually send until that manual setup is done. Verify with `curl -H "Authorization: Bearer <CRON_SECRET>" https://<deployed-url>/api/daily-reminder` and check the JSON response + Resend dashboard.
 
 ---
 
@@ -585,9 +603,10 @@ A shared demonstration account is maintained for upper management presentations 
 - Confirmed (2026-09-01): Jose Barron and James Pugh each show up as a single, correct `profiles` row (role `employee`, correct `emp_no`, no manager badge — expected, since Daniel is the only manager reviewing/approving). Both were added directly by Claude during initial app setup (not through the `inviteEmployee` admin flow, which generates a placeholder id that can mismatch the real Supabase Auth id on self-registration). `timesheet_file_location` now filled in for both (set to their employee numbers)
 - Fixed the `inviteEmployee` id-mismatch bug proactively (2026-09-01, not yet needed live but would have bitten the next team member added via Admin → Team → Add Team Member): that flow creates a `profiles` row with a client-generated placeholder id (`uid()`, not a real UUID), which never matched the real Supabase Auth id once the person actually signed up — resulting in a blank duplicate profile (default role/no emp_no/no folder location) instead of using the admin-configured row. `handleSignup` and `handleLogin` in `src/App.js` now look up an existing profile by email and re-key (`UPDATE ... SET id=<real auth id>`) it instead of inserting a new blank one. Requires a new RLS policy — "Users can claim their own pre-created profile" (UPDATE, `email = auth.email()` / `id = auth.uid()`) — added to `profiles` (see 6.1); confirm it's been run in Supabase before the next new-employee signup
 - Upper-management demo delivered (2026-09-01): `demo@beardint.com` populated with sample data and shared with several executives
+- Daily reminder system built (2026-09-01): the old "designed but not confirmed implemented" notification UI was actually just decorative (see 5.8 note) — replaced with a real Vercel Cron + `api/daily-reminder.js` + Resend email flow, see 5.10 for full design/rationale. Fires weekdays at 1:30 PM America/Chicago, emails anyone who hasn't logged hours for the day (excluding approved PTO and already-submitted weeks)
 
 ### 16.2 Known Outstanding
-- Notification system (10 AM Friday reminder, configurable 1 PM daily reminder) — designed but not confirmed fully implemented
+- **Daily reminder manual setup needed:** add `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `REMINDER_FROM_EMAIL`, `CRON_SECRET` in Vercel, and verify a sending domain in Resend (see 5.10) — reminders will not send until this is done. Also worth a follow-up to confirm whether this project is on Vercel Hobby or Pro, so the cron schedule can be tightened to exact-minute precision if Pro
 
 ### 16.3 Wishlist / Not Started
 

@@ -1,5 +1,8 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "build",
-  "framework": "create-react-app"
+  "framework": "create-react-app",
+  "crons": [
+    { "path": "/api/daily-reminder", "schedule": "30 19 * * 1-5" }
+  ]
 }
