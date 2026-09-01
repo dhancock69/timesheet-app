@@ -195,9 +195,15 @@ function LoginScreen({onLogin}) {
     setLoading(true); setError("");
     const {data,error:e}=await supabase.auth.signUp({email,password,options:{data:{name}}});
     if(e){setError(e.message);setLoading(false);return;}
-    // Create profile
+    // Create profile — if an admin already pre-created one for this email (Team invite),
+    // claim/re-key it to the real auth id instead of creating a separate blank duplicate.
     if(data.user){
-      await supabase.from("profiles").upsert({id:data.user.id,name:name.trim(),email,role:"employee",is_manager:false});
+      const {data:existing}=await supabase.from("profiles").select("id").eq("email",email).neq("id",data.user.id).maybeSingle();
+      if(existing){
+        await supabase.from("profiles").update({id:data.user.id,name:name.trim()}).eq("id",existing.id);
+      } else {
+        await supabase.from("profiles").upsert({id:data.user.id,name:name.trim(),email,role:"employee",is_manager:false});
+      }
     }
     setSuccess("Account created! You can now sign in.");
     setMode("login");
@@ -1247,12 +1253,19 @@ export default function App() {
   const handleLogin=async(u)=>{
     setUser(u);
     try {
-      // Load or create profile
+      // Load or create profile — claim a pre-created invite row by email if one exists,
+      // instead of creating a blank duplicate under the real auth id.
       let {data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();
       if(!prof){
-        const name=u.user_metadata?.name||u.email?.split("@")[0]||"User";
-        const {data:newProf}=await supabase.from("profiles").insert({id:u.id,name,email:u.email,role:"employee",is_manager:false}).select().single();
-        prof=newProf||{id:u.id,name:u.user_metadata?.name||"User",email:u.email,is_manager:false,role:"employee"};
+        const {data:existing}=await supabase.from("profiles").select("*").eq("email",u.email).maybeSingle();
+        if(existing){
+          const {data:updated}=await supabase.from("profiles").update({id:u.id}).eq("id",existing.id).select().single();
+          prof=updated||{...existing,id:u.id};
+        } else {
+          const name=u.user_metadata?.name||u.email?.split("@")[0]||"User";
+          const {data:newProf}=await supabase.from("profiles").insert({id:u.id,name,email:u.email,role:"employee",is_manager:false}).select().single();
+          prof=newProf||{id:u.id,name:u.user_metadata?.name||"User",email:u.email,is_manager:false,role:"employee"};
+        }
       }
       setProfile(prof);
       // Load all data with error handling
