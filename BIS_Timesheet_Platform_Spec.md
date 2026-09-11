@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.4  
-**Date:** September 1, 2026  
+**Version:** 1.5  
+**Date:** September 2, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -22,7 +22,7 @@ The BeardONE Timesheet Platform is a custom-built, cloud-deployed internal times
 | Backend / Database | Supabase | PostgreSQL + Auth + RLS |
 | Deployment | Vercel | Hobby plan, auto-deploy from GitHub |
 | Source Control | GitHub | `dhancock69/timesheet-app` |
-| Excel Export | SheetJS (XLSX) | 0.18.5 via CDN |
+| Excel Export | ExcelJS | 4.4.0 via CDN |
 | Font | DM Sans | Google Fonts (400, 500, 700, 900) |
 | Supabase Client | @supabase/supabase-js | ^2.39.0 |
 
@@ -33,7 +33,7 @@ The BeardONE Timesheet Platform is a custom-built, cloud-deployed internal times
 ```
 timesheet-app/
 ├── public/
-│   ├── index.html              # App shell, Google Fonts, SheetJS CDN
+│   ├── index.html              # App shell, Google Fonts, ExcelJS CDN
 │   ├── bim-bg.png              # BIM slideshow background 1
 │   ├── bim-bg-2.png            # BIM slideshow background 2
 │   ├── bim-bg-3.png            # BIM slideshow background 3
@@ -383,13 +383,15 @@ Props: `{ employees, projects, settings }`
 
 **Reject flow:** Opens rejection note input. Updates status to `rejected` with note stored in `rejection_note` column.
 
-**Excel Export** (`exportTimesheets()`, triggered by the "↓ Export Timesheets Excel" button):
-- Uses `window.XLSX` (SheetJS loaded via CDN in `index.html`)
+**Excel Export** (`exportTimesheets()`, triggered by the "↓ Export & Email Timesheets" button):
+- Uses `window.ExcelJS` (ExcelJS 4.4.0 loaded via CDN in `index.html`) — switched from SheetJS community edition (2026-09-02) because SheetJS's free build cannot write cell borders, fonts, or number formats, and matching the real company timesheet template exactly requires all three
+- Per-employee tabs are built by `buildTimesheetSheet()` in `src/timesheetTemplate.js`, a cell-for-cell reproduction (merges, fonts, borders, number formats, formulas, page setup/print header) of the actual BIS company timesheet template, reverse-engineered from a completed sample workbook. Not yet visually verified against a real print/PDF of the template — worth a side-by-side check next session
 - Operates on all submitted + approved timesheets for the currently-reviewed week (`reviewWS`, navigable via ‹/› — export dates are anchored to this, not to "today")
 - Produces two downloaded files plus per-record archive copies in Supabase Storage (see 5.9):
-  1. **`BIS_VDC_Timesheets_{weekEndDate}.xlsx`** — one tab per employee, named by `emp_no`. BIS payroll format: Employee No, Week Ending, Supervisor header rows; PROJECT #, TASK #, EXPENSE TYPE, PROJECT DESCRIPTION columns (only projects the employee logged hours against); daily REG/OT/DT; row totals.
+  1. **`BIS_VDC_Timesheets_{weekEndDate}.xlsx`** — one tab per employee, named by `emp_no`. Matches the company template: Employee No./Name, Week-Ending date, Employee/Supervisor signature (typed name in Lucida Handwriting font) and Site/Foreman (left blank — no data source yet) header block; PROJECT #, TASK #, EXPENSE TYPE, PROJECT DESCRIPTION columns; 7 day columns (Mon–Sun) × REG/OT/DT; live SUM formulas for row and column totals. Fixed 8 project rows to match the template; if an employee has more than 8 projects in a week, extra rows are appended below row 20 and the totals-row SUM range widens automatically to cover them
   2. **`BIS_VDC_DailyReports_{weekEndDate}.xlsx`** — single tab, all employees for the week, one row per employee per day that has a location, notes, or report entry.
 - Also uploads: one single-tab timesheet workbook per employee to `{profiles.timesheet_file_location}/...` in the `timesheet-records` bucket, and one copy of the daily-report workbook to `{app_settings.daily_report_file_location}/...`. Employees/settings with no folder configured are skipped and listed in the status message.
+- Also emails both workbooks (see 5.10-adjacent `api/send-export-email.js`): timesheets workbook → `payroll_email`, daily report workbook → `manager_email` (Admin → Settings, both `;`-split for multiple recipients). Blocked on the same Resend domain verification as the daily reminder.
 
 ---
 
@@ -604,13 +606,15 @@ A shared demonstration account is maintained for upper management presentations 
 - Fixed the `inviteEmployee` id-mismatch bug proactively (2026-09-01, not yet needed live but would have bitten the next team member added via Admin → Team → Add Team Member): that flow creates a `profiles` row with a client-generated placeholder id (`uid()`, not a real UUID), which never matched the real Supabase Auth id once the person actually signed up — resulting in a blank duplicate profile (default role/no emp_no/no folder location) instead of using the admin-configured row. `handleSignup` and `handleLogin` in `src/App.js` now look up an existing profile by email and re-key (`UPDATE ... SET id=<real auth id>`) it instead of inserting a new blank one. Requires a new RLS policy — "Users can claim their own pre-created profile" (UPDATE, `email = auth.email()` / `id = auth.uid()`) — added to `profiles` (see 6.1); confirm it's been run in Supabase before the next new-employee signup
 - Upper-management demo delivered (2026-09-01): `demo@beardint.com` populated with sample data and shared with several executives
 - Daily reminder system built (2026-09-01): the old "designed but not confirmed implemented" notification UI was actually just decorative (see 5.8 note) — replaced with a real Vercel Cron + `api/daily-reminder.js` + Resend email flow, see 5.10 for full design/rationale. Fires weekdays at 1:30 PM America/Chicago, emails anyone who hasn't logged hours for the day (excluding approved PTO and already-submitted weeks)
+- Email submission directly to payroll built (2026-09-02): `exportTimesheets()` (`ManagerView`, `src/App.js`) now emails both exported workbooks automatically on every click of "Export & Email Timesheets" — the timesheets workbook (per-employee tabs) to `payroll_email`, the daily report workbook to `manager_email`, both split on `;` for multiple recipients. New endpoint `api/send-export-email.js`: verifies the caller's Supabase session and `manager`/`admin` role server-side (does not trust the client for recipients — re-reads `payroll_email`/`manager_email` from `app_settings` itself), then sends both emails via Resend with the workbook as a base64 attachment. Reuses `RESEND_API_KEY`/`REMINDER_FROM_EMAIL` from 16.2 — blocked on the same Resend domain verification as the daily reminder. Export panel copy and button ("↓ Export & Email Timesheets") updated so it's clear emails go out, addressing prior confusion where the button gave no indication anything would be emailed. Not yet tested end-to-end (pending domain verification)
+- Per-employee timesheet export rebuilt to match the real BIS company template exactly (2026-09-02): Daniel uploaded a completed sample (`VDC-Timesheets-DHancock-WE 08-30-2026.xlsx`); the raw OOXML was reverse-engineered cell-by-cell (fonts, borders, merges, number formats, formulas, page setup) since the previous export only loosely resembled the real form. This required switching the export library from SheetJS community edition (can't write borders/fonts/number formats) to **ExcelJS** (`public/index.html` CDN swap, `xlsx` → `exceljs` 4.4.0) — new module `src/timesheetTemplate.js` (`buildTimesheetSheet()`) now reproduces the template's header block (Employee No./Name, Week-Ending, signatures in Lucida Handwriting font, Site/Foreman left blank), 7-day REG/OT/DT grid with live SUM formulas, and print header/page setup. Decisions made with Daniel: Supervisor's Signature always shows the real supervisor (`settings.supervisor`), not a self-signed value; Site/Foreman stays blank (no data source); the template's fixed 8 project rows expand automatically (with widened SUM range) if an employee logs more than 8 projects in a week. **Not yet visually verified** — no side-by-side check against a printed/PDF'd real template has been done yet; do that before treating this as fully matching
 
 ### 16.2 Known Outstanding
-- **Daily reminder manual setup needed:** add `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `REMINDER_FROM_EMAIL`, `CRON_SECRET` in Vercel, and verify a sending domain in Resend (see 5.10) — reminders will not send until this is done. Also worth a follow-up to confirm whether this project is on Vercel Hobby or Pro, so the cron schedule can be tightened to exact-minute precision if Pro
+- **Daily reminder + export email manual setup needed:** add `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `REMINDER_FROM_EMAIL`, `CRON_SECRET` in Vercel, and verify a sending domain in Resend (see 5.10) — reminders and the payroll/manager export emails will not send until this is done. Domain verification is in progress as of 2026-09-02 (waiting on IT contact for DNS access to `beardint.com`; recommended a dedicated subdomain like `notify.beardint.com` rather than the apex, since M365 likely already owns the SPF record there). Also worth a follow-up to confirm whether this project is on Vercel Hobby or Pro, so the cron schedule can be tightened to exact-minute precision if Pro
+- **Export email not yet tested end-to-end** — code path is new (2026-09-02) and untested against a real send since Resend is still unverified; re-verify the payroll/manager recipient mapping and email content once domain verification unblocks sending
 
 ### 16.3 Wishlist / Not Started
 
-- Email submission directly to payroll
 - Mobile layout optimization
 - Surfacing archived Storage record links back in the UI (e.g. a "view record" link on the employee card) — not built, archiving is currently write-only
 - Phase 3 items from Section 12.0 (demo/read-only mode, date-range export, etc.)
