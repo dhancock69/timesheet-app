@@ -701,15 +701,16 @@ function ManagerView({employees,projects,settings}) {
     const reportsBuf=await reportsWb.xlsx.writeBuffer();
     downloadWorkbook(reportsBuf,`BIS_VDC_DailyReports_${weekEndKey}.xlsx`);
 
-    // Archive record copies to Supabase Storage
+    // Archive record copies to Supabase Storage, and keep a base64 copy of each for emailing the employee
     setStatus("Archiving record copies…");
-    let archived=0; const skipped=[];
+    let archived=0; const skipped=[]; const employeeTimesheets=[];
     for(const {ts,entries} of allData){
       const emp=employees.find(e=>e.id===ts.employee_id)||ts.profiles||{};
-      if(!emp.timesheet_file_location){ skipped.push(emp.name||emp.emp_no||"Unknown employee"); continue; }
       const wb=new ExcelJS.Workbook();
       buildTimesheetSheet(wb,(emp.emp_no||emp.name||"Employee").substring(0,31),{emp,projects,entries,weekEndDate:weekEnd,supervisorName,DAYS});
       const buf=await wb.xlsx.writeBuffer();
+      employeeTimesheets.push({employeeId:ts.employee_id,base64:bufToBase64(buf)});
+      if(!emp.timesheet_file_location){ skipped.push(emp.name||emp.emp_no||"Unknown employee"); continue; }
       const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
       const path=storagePath(emp.timesheet_file_location,`BIS_VDC_Timesheet_${emp.emp_no||emp.id}_${weekEndKey}.xlsx`);
       const{error}=await supabase.storage.from(RECORDS_BUCKET).upload(path,blob,{upsert:true,contentType:blob.type});
@@ -736,12 +737,15 @@ function ManagerView({employees,projects,settings}) {
       const r=await fetch("/api/send-export-email",{
         method:"POST",
         headers:{Authorization:`Bearer ${session?.access_token}`,"Content-Type":"application/json"},
-        body:JSON.stringify({weekEndKey,timesheetsBase64,dailyReportBase64}),
+        body:JSON.stringify({weekEndKey,timesheetsBase64,dailyReportBase64,employeeTimesheets}),
       });
       const result=await r.json();
       if(r.ok){
         const describe=(label,rr)=>rr?.skipped?`${label} skipped (${rr.skipped})`:rr?.ok?`${label} sent`:`${label} failed (${rr?.error||rr?.status||"unknown error"})`;
-        emailMsg=` ${describe("Payroll email",result.payroll)}. ${describe("Manager email",result.manager)}.`;
+        const empResults=result.employees||[];
+        const empSent=empResults.filter(e=>e.ok).length;
+        const empIssues=empResults.filter(e=>!e.ok).map(e=>`${e.email||e.employeeId}${e.skipped?` (${e.skipped})`:e.error?` (${e.error})`:""}`);
+        emailMsg=` ${describe("Payroll email",result.payroll)}. ${describe("Manager email",result.manager)}. Employee copies: ${empSent}/${empResults.length} sent${empIssues.length?` (issues: ${empIssues.join(", ")})`:""}.`;
       } else {
         emailMsg=` Email send failed: ${result?.error||r.status}.`;
       }
@@ -880,7 +884,7 @@ function ManagerView({employees,projects,settings}) {
       {submitted.length>0&&(
         <Card solid style={{padding:24}}>
           <h3 style={{margin:"0 0 8px",color:C.text,fontSize:16,fontWeight:900}}>Export & Send</h3>
-          <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Downloads BIS_VDC_Timesheets and BIS_VDC_DailyReports for this week, archives a record copy per employee (plus one daily report copy) to Storage, <b>and emails</b> the timesheets workbook to Payroll Email and the daily report workbook to Manager Email (Admin → Settings).</p>
+          <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Downloads BIS_VDC_Timesheets and BIS_VDC_DailyReports for this week, archives a record copy per employee (plus one daily report copy) to Storage, <b>and emails</b> the timesheets workbook to Payroll Email and the daily report workbook to Manager Email (Admin → Settings) — each employee is also CC'd their own single-tab copy.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             <Btn variant="primary" onClick={exportTimesheets}>↓ Export & Email Timesheets</Btn>
           </div>

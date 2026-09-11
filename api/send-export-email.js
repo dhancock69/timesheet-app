@@ -25,7 +25,7 @@ module.exports = async function handler(req, res) {
     return res.status(403).json({ error: "Manager access required" });
   }
 
-  const { weekEndKey, timesheetsBase64, dailyReportBase64 } = req.body || {};
+  const { weekEndKey, timesheetsBase64, dailyReportBase64, employeeTimesheets } = req.body || {};
   if (!weekEndKey || !timesheetsBase64 || !dailyReportBase64) {
     return res.status(400).json({ error: "weekEndKey, timesheetsBase64, and dailyReportBase64 are required" });
   }
@@ -59,7 +59,28 @@ module.exports = async function handler(req, res) {
     }
   };
 
-  const [payroll, manager] = await Promise.all([
+  // CC each employee their own single-tab timesheet — re-look-up their email server-side
+  // rather than trusting whatever the client sends, same as payroll/manager above.
+  const sendEmployeeCopies = async () => {
+    if (!Array.isArray(employeeTimesheets) || !employeeTimesheets.length) return [];
+    const ids = [...new Set(employeeTimesheets.map(e => e.employeeId).filter(Boolean))];
+    const { data: emps } = await supabase.from("profiles").select("id,email").in("id", ids);
+    const empById = new Map((emps || []).map(e => [e.id, e]));
+    return Promise.all(employeeTimesheets.map(async ({ employeeId, base64 }) => {
+      const emp = empById.get(employeeId);
+      if (!emp?.email) return { employeeId, skipped: "no employee email on file" };
+      const result = await sendEmail({
+        to: [emp.email],
+        subject: `Your BeardONE Timesheet — Week Ending ${weekEndKey}`,
+        text: `Attached: your submitted timesheet for the week ending ${weekEndKey}.`,
+        filename: `BIS_VDC_Timesheet_${weekEndKey}.xlsx`,
+        content: base64,
+      });
+      return { employeeId, email: emp.email, ...result };
+    }));
+  };
+
+  const [payroll, manager, employeesResult] = await Promise.all([
     sendEmail({
       to: parseRecipients(settings.payroll_email),
       subject: `BeardONE Timesheets — Week Ending ${weekEndKey}`,
@@ -74,7 +95,8 @@ module.exports = async function handler(req, res) {
       filename: `BIS_VDC_DailyReports_${weekEndKey}.xlsx`,
       content: dailyReportBase64,
     }),
+    sendEmployeeCopies(),
   ]);
 
-  return res.status(200).json({ payroll, manager });
+  return res.status(200).json({ payroll, manager, employees: employeesResult });
 };
