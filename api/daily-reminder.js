@@ -39,20 +39,26 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: `Missing env vars: ${missingEnv.join(", ")}` });
   }
 
+  const dryRun = req.query?.dryRun === "1";
+
   const { dateStr, weekday, hour, minute } = chicagoNow();
 
-  if (!WEEKDAYS.includes(weekday)) {
-    return res.status(200).json({ skipped: "weekend", weekday });
-  }
-  if (hour < REMINDER_HOUR || (hour === REMINDER_HOUR && minute < REMINDER_MINUTE)) {
-    return res.status(200).json({ skipped: "before 1:30 PM Central", localTime: `${hour}:${String(minute).padStart(2, "0")}` });
+  if (!dryRun) {
+    if (!WEEKDAYS.includes(weekday)) {
+      return res.status(200).json({ skipped: "weekend", weekday });
+    }
+    if (hour < REMINDER_HOUR || (hour === REMINDER_HOUR && minute < REMINDER_MINUTE)) {
+      return res.status(200).json({ skipped: "before 1:30 PM Central", localTime: `${hour}:${String(minute).padStart(2, "0")}` });
+    }
   }
 
   const supabase = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  const { data: lastSent } = await supabase.from("app_settings").select("value").eq("key", "reminder_last_sent_date").maybeSingle();
-  if (lastSent?.value === dateStr) {
-    return res.status(200).json({ skipped: "already sent today", dateStr });
+  if (!dryRun) {
+    const { data: lastSent } = await supabase.from("app_settings").select("value").eq("key", "reminder_last_sent_date").maybeSingle();
+    if (lastSent?.value === dateStr) {
+      return res.status(200).json({ skipped: "already sent today", dateStr });
+    }
   }
 
   const weekStart = mondayOf(dateStr);
@@ -91,6 +97,15 @@ module.exports = async function handler(req, res) {
     if (ts && loggedTimesheetIds.has(ts.id)) return false;
     return true;
   });
+
+  if (dryRun) {
+    return res.status(200).json({
+      dryRun: true,
+      dateStr, weekday, localTime: `${hour}:${String(minute).padStart(2, "0")}`,
+      wouldRemindCount: toRemind.length,
+      wouldRemind: toRemind.map(e => ({ id: e.id, name: e.name, email: e.email })),
+    });
+  }
 
   const results = [];
   for (const emp of toRemind) {
