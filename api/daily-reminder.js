@@ -130,7 +130,12 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  await supabase.from("app_settings").upsert({ key: "reminder_last_sent_date", value: dateStr }, { onConflict: "key" });
+  const anySucceeded = results.some(r => r.ok);
+  if (anySucceeded) {
+    // Only lock in today's date if at least one email actually went out, so a total
+    // outage at 1:30 PM local leaves the flag unset and lets the 2:30 PM run retry.
+    await supabase.from("app_settings").upsert({ key: "reminder_last_sent_date", value: dateStr }, { onConflict: "key" });
+  }
 
-  return res.status(200).json({ dateStr, remindedCount: toRemind.length, results });
+  return res.status(200).json({ dateStr, remindedCount: toRemind.length, sentFlagSet: anySucceeded, results });
 };
