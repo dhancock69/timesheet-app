@@ -1,8 +1,12 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-const REMINDER_HOUR = 13;   // 1:30 PM America/Chicago — see vercel.json crons comment
+const REMINDER_HOUR = 13;   // 1:30 PM America/Chicago
 const REMINDER_MINUTE = 30;
+// vercel.json fires this twice daily (18:30 UTC and 19:30 UTC) to cover both CDT and CST
+// without manual DST updates. Whichever run lands before 1:30 PM local is skipped by the
+// gate above; whichever lands at/after it sends and sets reminder_last_sent_date, which
+// blocks the other run from double-sending that day.
 
 function chicagoNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
