@@ -7,11 +7,18 @@ const REMINDER_TARGETS = {
   Wednesday: { hour: 12, minute: 30 }, Thursday: { hour: 12, minute: 30 },
   Friday: { hour: 10, minute: 0 },
 };
-// vercel.json fires 4 crons daily: for each of the two targets above, one entry at the
-// CDT UTC offset and one at the CST UTC offset, so the right one lands on time year-round
-// without manual DST updates. Whichever run lands before its weekday's target local time is
-// skipped by the gate below; whichever lands at/after it sends and sets reminder_last_sent_date,
-// which blocks the other (same-target) run from double-sending that day.
+// vercel.json fires 2 crons daily (one per weekday group above), each at a single fixed
+// UTC time — no DST auto-adjustment (Vercel Hobby's 2-cron-job cap doesn't leave room for
+// the CDT/CST offset pairing that would need). The UTC hours in vercel.json are set for
+// the CURRENT DST state and must be manually shifted by 1 hour at each DST transition:
+//   - CDT (roughly mid-Mar to early Nov): local = UTC-5
+//   - CST (roughly early Nov to mid-Mar): local = UTC-6
+// CAUTION: if the schedule is left set for CDT after CST begins (fixed UTC time now maps
+// to 1hr *earlier* local), the run lands before that day's target and is silently skipped
+// (gate below only checks "before target" — there's no later same-day retry) — the
+// reminder just won't go out that day until the schedule is corrected. The opposite case
+// (still set for CST after CDT begins) merely sends 1hr late, since it still lands after
+// target. So always update vercel.json *before* the fall-back transition, not after.
 
 function chicagoNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -139,8 +146,9 @@ module.exports = async function handler(req, res) {
 
   const anySucceeded = results.some(r => r.ok);
   if (anySucceeded) {
-    // Only lock in today's date if at least one email actually went out, so a total
-    // outage on the first run leaves the flag unset and lets the second (other-DST-offset) run retry.
+    // Only lock in today's date if at least one email actually went out. With a single daily
+    // run per weekday group there's no same-day retry on total outage — the flag staying
+    // unset just means tomorrow's run isn't blocked by a phantom "already sent" for today.
     await supabase.from("app_settings").upsert({ key: "reminder_last_sent_date", value: dateStr }, { onConflict: "key" });
   }
 
