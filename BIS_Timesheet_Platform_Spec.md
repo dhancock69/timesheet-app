@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.6  
-**Date:** September 11, 2026  
+**Version:** 1.7  
+**Date:** September 21, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -332,18 +332,23 @@ Props: `{ profile, projects, settings }`
 - `saving`, `savedMsg`, `submitted` — UI feedback states
 - `myPTO` — employee's PTO request history
 - `showPTO`, `showReminderPanel` — modal visibility flags
+- `viewWS` — currently viewed week start date (defaults to current week, `WS`)
+- `viewWeekKey` — `toDateStr(viewWS)` used as Supabase query parameter; `isCurrentWeek` — `viewWeekKey===WEEK_KEY`
+
+**Week navigation (added 2026-09-21):** `‹` / `›` buttons next to the week label in the sticky header shift `viewWS` by ±7 days via `shiftWeek(dir)`, letting an employee go back and fill out/submit a past week's timesheet (e.g. one missed last pay period). Forward navigation is capped at the current week (`shiftWeek` no-ops if the target date is after `WS`) — employees can't pre-fill future weeks. A "This Week" button appears whenever `viewWeekKey!==WEEK_KEY` to jump back to today. Changing weeks resets `days` to blank (dates recalculated from `viewWS`) and re-fetches via `loadTimesheet()`, keyed off `viewWeekKey` in a `useEffect`. The "Today" highlight/badge on a day card is gated on `isCurrentWeek` so a past week's matching weekday isn't mislabeled. Each week is its own `timesheets` row (unique on `employee_id,week_start`), and the existing per-timesheet `submitted` lock (disables inputs once status is `submitted`/`approved`) already applies per week with no code change needed — RLS (`auth.uid()=employee_id`, no date restriction) already permitted this; it was purely a front-end gap.
 
 **Key functions:**
 
 | Function | Description |
 |---|---|
-| `loadTimesheet()` | Fetches existing timesheet + entries + reports for current week. Fires when `empProjects.length > 0`. |
-| `handleSave(submit)` | Deletes existing entries then re-inserts all current data. Sets status to `draft` or `submitted`. |
+| `loadTimesheet()` | Fetches existing timesheet + entries + reports for `viewWeekKey` (the currently viewed week, not always the current week). Fires on mount and whenever `viewWeekKey` changes. |
+| `shiftWeek(dir)` | Shifts `viewWS` by `dir*7` days; ignores forward shifts past the current week. |
+| `handleSave(submit)` | Deletes existing entries then re-inserts all current data, keyed to `viewWeekKey`/`viewWS`. Sets status to `draft` or `submitted`. |
 | `updateEntry(dayIdx, projId, field, val)` | Updates a single hour field in local state |
 | `updateDay(i, field, val)` | Updates location/notes/report for a day |
 
 **Sticky action bar (top of view):**
-- Row 1: Employee name, week range, emp_no, hours summary (REG/OT/DT/Total), saved/submitted badge
+- Row 1: Employee name, ‹ week range › + "This Week" jump button, emp_no, hours summary (REG/OT/DT/Total), saved/submitted badge
 - Row 2: Request Time Off · Reminders · 💾 Save Draft · Submit ✓
 
 **Day cards:** One per day (Mon–Sun). Contains location selector, project/hour grid, notes field, daily report field. Transparent background (`rgba(6,4,4,0.22)`) to show BIM background images.
@@ -581,7 +586,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of September 11, 2026)
+## 16.0 Current Status (as of September 21, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -620,6 +625,7 @@ A shared demonstration account is maintained for upper management presentations 
 - **Excel template border artifact fixed (2026-09-11):** visually verified `buildTimesheetSheet()`'s output against the reference sample (`VDC-Timesheets-DHancock-WE 08-30-2026.xlsx`) by exporting both to PDF and comparing directly. Found and removed a stray partial-border artifact in the blank footer area below the closing double-rule (leftover "footer spacer rows" code that doesn't match the real form). Confirmed fixed in the regenerated PDF.
 - **Export email tested end-to-end (2026-09-11):** validated against a Vercel preview deployment with real Supabase/Resend credentials — single-employee send, then a 3-employee combined workbook (you, Jose Barron, James Pugh) confirming correctly-labeled, non-contaminated per-employee tabs. Both the auth bug and border artifact above were found during this testing.
 - **Each employee now CC'd their own timesheet on export (2026-09-11):** `api/send-export-email.js` accepts a per-employee `{employeeId, base64}` list (the same buffer already used for the Storage archive copy — byte-identical, not regenerated) and emails each employee their own single-tab workbook, having re-looked-up their real email from `profiles` server-side rather than trusting the client. Status message reports `Employee copies: N/M sent`. Tested with a real send on a single-employee week; multi-employee attachment scoping verified structurally (same buffer already confirmed correct in the 3-employee Storage archive test) rather than via a second live send, to avoid emailing Jose's/James's real addresses during testing.
+- **Employee week navigation added (2026-09-21):** `EmployeeView` (`src/App.js`) previously only ever operated on the app-load week (module-level `WS`, fixed at page load), so an employee who missed a week — e.g. last pay period — had no way to go back and fill it out. Added `viewWS`/`shiftWeek()` state, mirroring `ManagerView`'s existing `reviewWS` pattern: ‹/› buttons in the sticky header shift the viewed week ±7 days (capped so employees can't navigate into future weeks), with a "This Week" jump-back button. Confirmed via `npx react-scripts build` (compiles clean) — no schema/RLS change needed, since `timesheets` is already keyed uniquely on `(employee_id, week_start)` and RLS already permits an employee to manage any of their own timesheet rows regardless of date. See 8.3.
 
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.

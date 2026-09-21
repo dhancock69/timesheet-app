@@ -354,6 +354,7 @@ function PTOModal({profile,onClose,onSubmit}) {
 
 // ── Employee Timesheet View ───────────────────────────────────────────────────
 function EmployeeView({profile,projects,settings}) {
+  const [viewWS,setViewWS]=useState(WS);
   const [days,setDays]=useState(()=>DAYS.map((n,i)=>({name:n,date:dateOfDay(WS,i),entries:{},notes:"",report:"",location:""})));
   const [submitted,setSubmitted]=useState(false);
   const [savedMsg,setSavedMsg]=useState(false);
@@ -368,12 +369,26 @@ function EmployeeView({profile,projects,settings}) {
   const locations=settings?.locations||DEFAULT_LOCATIONS;
   const empProjects=projects.filter(p=>p.assigned||p.employee_projects?.some(ep=>ep.employee_id===profile.id));
 
-  useEffect(()=>{ loadTimesheet(); loadMyPTO(); },[]);
+  const viewWeekKey=toDateStr(viewWS);
+  const viewWeekLabel=weekLabel(viewWS);
+  const isCurrentWeek=viewWeekKey===WEEK_KEY;
+
+  const shiftWeek=(dir)=>{
+    const d=new Date(viewWS); d.setDate(d.getDate()+(dir*7));
+    if(dir>0&&d>WS) return; // don't let employees fill out future weeks
+    setViewWS(d);
+  };
+
+  useEffect(()=>{
+    setDays(DAYS.map((n,i)=>({name:n,date:dateOfDay(viewWS,i),entries:{},notes:"",report:"",location:""})));
+    setTimesheetId(null); setSubmitted(false); setRejectionNote(""); setSavedMsg(false);
+    loadTimesheet();
+  },[viewWeekKey]);
+  useEffect(()=>{ loadMyPTO(); },[]);
 
   const loadTimesheet=async()=>{
     setLoading(true);
-    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
-    const {data:ts}=await supabase.from("timesheets").select("*").eq("employee_id",profile.id).eq("week_start",WEEK_KEY).single();
+    const {data:ts}=await supabase.from("timesheets").select("*").eq("employee_id",profile.id).eq("week_start",viewWeekKey).single();
     if(ts){
       setTimesheetId(ts.id);
       setSubmitted(ts.status==="submitted"||ts.status==="approved");
@@ -407,11 +422,11 @@ function EmployeeView({profile,projects,settings}) {
   const grandTotal=grandReg+grandOT+grandDT;
   const handleSave=async(submit=false)=>{
     setSaving(true);
-    const weekEnd=new Date(WS); weekEnd.setDate(weekEnd.getDate()+6);
+    const weekEnd=new Date(viewWS); weekEnd.setDate(weekEnd.getDate()+6);
     let tsId=timesheetId;
     if(!tsId){
       const {data:ts,error:e}=await supabase.from("timesheets").upsert({
-        employee_id:profile.id, week_start:WEEK_KEY,
+        employee_id:profile.id, week_start:viewWeekKey,
         week_end:toDateStr(weekEnd), status:submit?"submitted":"draft",
         submitted_at:submit?new Date().toISOString():null
       },{onConflict:"employee_id,week_start"}).select().single();
@@ -454,7 +469,13 @@ function EmployeeView({profile,projects,settings}) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:8}}>
           <div>
             <h2 style={{margin:0,color:C.text,fontSize:20,fontWeight:900}}>{profile.name}</h2>
-            <p style={{margin:"2px 0 0",color:C.muted,fontSize:12}}>{weekLabel(WS)} · <span style={{color:C.gold}}>#{profile.emp_no||"No Emp# yet"}</span></p>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+              <button onClick={()=>shiftWeek(-1)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.muted,cursor:"pointer",padding:"1px 8px",fontSize:14,lineHeight:1}}>‹</button>
+              <span style={{color:C.muted,fontSize:12}}>{viewWeekLabel}</span>
+              <button onClick={()=>shiftWeek(1)} disabled={isCurrentWeek} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:isCurrentWeek?C.border:C.muted,cursor:isCurrentWeek?"default":"pointer",padding:"1px 8px",fontSize:14,lineHeight:1}}>›</button>
+              {!isCurrentWeek&&<button onClick={()=>setViewWS(WS)} style={{background:"none",border:`1px solid ${C.accent}`,borderRadius:6,color:C.accent,cursor:"pointer",padding:"1px 8px",fontSize:10,fontWeight:700}}>This Week</button>}
+              <span style={{color:C.gold,fontSize:12}}>· #{profile.emp_no||"No Emp# yet"}</span>
+            </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <div style={{background:C.accentDim,borderRadius:8,padding:"6px 12px",fontWeight:800,fontSize:12,color:C.accent,border:`1px solid ${C.accent}33`}}>
@@ -520,7 +541,7 @@ function EmployeeView({profile,projects,settings}) {
       )}
 
       {days.map((day,i)=>{
-        const isToday=day.name===todayName();
+        const isToday=isCurrentWeek&&day.name===todayName();
         const dReg=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.reg)||0),0);
         const dOT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.ot)||0),0);
         const dDT=empProjects.reduce((s,p)=>s+(parseFloat(day.entries[p.id]?.dt)||0),0);
