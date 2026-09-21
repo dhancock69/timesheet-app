@@ -1,12 +1,17 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-const REMINDER_HOUR = 13;   // 1:30 PM America/Chicago
-const REMINDER_MINUTE = 30;
-// vercel.json fires this twice daily (18:30 UTC and 19:30 UTC) to cover both CDT and CST
-// without manual DST updates. Whichever run lands before 1:30 PM local is skipped by the
-// gate above; whichever lands at/after it sends and sets reminder_last_sent_date, which
-// blocks the other run from double-sending that day.
+// Mon-Thu target 12:30 PM America/Chicago; Friday targets 10:00 AM (payroll needs it earlier that day).
+const REMINDER_TARGETS = {
+  Monday: { hour: 12, minute: 30 }, Tuesday: { hour: 12, minute: 30 },
+  Wednesday: { hour: 12, minute: 30 }, Thursday: { hour: 12, minute: 30 },
+  Friday: { hour: 10, minute: 0 },
+};
+// vercel.json fires 4 crons daily: for each of the two targets above, one entry at the
+// CDT UTC offset and one at the CST UTC offset, so the right one lands on time year-round
+// without manual DST updates. Whichever run lands before its weekday's target local time is
+// skipped by the gate below; whichever lands at/after it sends and sets reminder_last_sent_date,
+// which blocks the other (same-target) run from double-sending that day.
 
 function chicagoNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -51,8 +56,10 @@ module.exports = async function handler(req, res) {
     if (!WEEKDAYS.includes(weekday)) {
       return res.status(200).json({ skipped: "weekend", weekday });
     }
-    if (hour < REMINDER_HOUR || (hour === REMINDER_HOUR && minute < REMINDER_MINUTE)) {
-      return res.status(200).json({ skipped: "before 1:30 PM Central", localTime: `${hour}:${String(minute).padStart(2, "0")}` });
+    const target = REMINDER_TARGETS[weekday];
+    if (hour < target.hour || (hour === target.hour && minute < target.minute)) {
+      const targetLabel = `${target.hour}:${String(target.minute).padStart(2, "0")}`;
+      return res.status(200).json({ skipped: `before ${targetLabel} Central`, localTime: `${hour}:${String(minute).padStart(2, "0")}` });
     }
   }
 
@@ -133,7 +140,7 @@ module.exports = async function handler(req, res) {
   const anySucceeded = results.some(r => r.ok);
   if (anySucceeded) {
     // Only lock in today's date if at least one email actually went out, so a total
-    // outage at 1:30 PM local leaves the flag unset and lets the 2:30 PM run retry.
+    // outage on the first run leaves the flag unset and lets the second (other-DST-offset) run retry.
     await supabase.from("app_settings").upsert({ key: "reminder_last_sent_date", value: dateStr }, { onConflict: "key" });
   }
 
