@@ -1,24 +1,17 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-// Mon-Thu target 12:30 PM America/Chicago; Friday targets 10:00 AM (payroll needs it earlier that day).
-const REMINDER_TARGETS = {
-  Monday: { hour: 12, minute: 30 }, Tuesday: { hour: 12, minute: 30 },
-  Wednesday: { hour: 12, minute: 30 }, Thursday: { hour: 12, minute: 30 },
-  Friday: { hour: 10, minute: 0 },
-};
-// vercel.json fires 2 crons daily (one per weekday group above), each at a single fixed
-// UTC time — no DST auto-adjustment (Vercel Hobby's 2-cron-job cap doesn't leave room for
-// the CDT/CST offset pairing that would need). The UTC hours in vercel.json are set for
-// the CURRENT DST state and must be manually shifted by 1 hour at each DST transition:
-//   - CDT (roughly mid-Mar to early Nov): local = UTC-5
-//   - CST (roughly early Nov to mid-Mar): local = UTC-6
-// CAUTION: if the schedule is left set for CDT after CST begins (fixed UTC time now maps
-// to 1hr *earlier* local), the run lands before that day's target and is silently skipped
-// (gate below only checks "before target" — there's no later same-day retry) — the
-// reminder just won't go out that day until the schedule is corrected. The opposite case
-// (still set for CST after CDT begins) merely sends 1hr late, since it still lands after
-// target. So always update vercel.json *before* the fall-back transition, not after.
+// vercel.json fires exactly one cron per weekday group per day, each at a fixed UTC time —
+// no DST auto-adjustment (Vercel Hobby's 2-cron-job cap doesn't leave room for CDT/CST
+// offset pairing):
+//   - Mon-Thu: 30 17 * * 1-4  (targets 12:30 PM America/Chicago while CDT is in effect)
+//   - Fri:     0 15 * * 5     (targets 10:00 AM America/Chicago while CDT is in effect)
+// Since there's only ever one trigger per weekday per day, there's no "wrong" entry to
+// filter out — this function has no time-of-day gate, it just sends whenever that single
+// cron fires (subject to the same-day dedup check below). That means for the ~1 week
+// around each DST transition, until vercel.json's UTC hours are manually adjusted by 1
+// hour (see spec 5.10), the reminder goes out an hour early or late — never silently
+// skipped, which is the point: a stale schedule degrades gracefully instead of failing.
 
 function chicagoNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -62,11 +55,6 @@ module.exports = async function handler(req, res) {
   if (!dryRun) {
     if (!WEEKDAYS.includes(weekday)) {
       return res.status(200).json({ skipped: "weekend", weekday });
-    }
-    const target = REMINDER_TARGETS[weekday];
-    if (hour < target.hour || (hour === target.hour && minute < target.minute)) {
-      const targetLabel = `${target.hour}:${String(target.minute).padStart(2, "0")}`;
-      return res.status(200).json({ skipped: `before ${targetLabel} Central`, localTime: `${hour}:${String(minute).padStart(2, "0")}` });
     }
   }
 
@@ -152,5 +140,5 @@ module.exports = async function handler(req, res) {
     await supabase.from("app_settings").upsert({ key: "reminder_last_sent_date", value: dateStr }, { onConflict: "key" });
   }
 
-  return res.status(200).json({ dateStr, remindedCount: toRemind.length, sentFlagSet: anySucceeded, results });
+  return res.status(200).json({ dateStr, weekday, localTime: `${hour}:${String(minute).padStart(2, "0")}`, remindedCount: toRemind.length, sentFlagSet: anySucceeded, results });
 };
