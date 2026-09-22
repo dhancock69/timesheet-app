@@ -183,7 +183,11 @@ export function buildTimesheetSheet(wb, sheetName, { emp, projects, entries, wee
 
   // ---- Totals row ----
   ws.getRow(TOTAL_ROW).height = 34.5;
-  mergeSet(ws, `A${TOTAL_ROW}:C${TOTAL_ROW}`, "", { font: FONT.header12b, align: CTR, brd: { left: M, right: M, top: T, bottom: T } });
+  // Left unmerged (unlike a plain blank cell) so the PROJECT #/TASK #/EXPENSE TYPE column
+  // dividers keep running straight down into the TOTAL row, matching the reference template.
+  setCell(ws, `A${TOTAL_ROW}`, "", { font: FONT.header12b, align: CTR, brd: { left: M, right: T, top: T, bottom: T } });
+  setCell(ws, `B${TOTAL_ROW}`, "", { font: FONT.header12b, align: CTR, brd: { left: M, right: M, top: T, bottom: T } });
+  setCell(ws, `C${TOTAL_ROW}`, "", { font: FONT.header12b, align: CTR, brd: { left: M, right: M, top: T, bottom: T } });
   setCell(ws, `D${TOTAL_ROW}`, "TOTAL", { font: FONT.header12b, align: CTR, brd: { left: M, top: T, bottom: T } });
   GROUPS.slice(0, 7).forEach((g, gi) => {
     const [regCol, otCol, dtCol] = g.cols;
