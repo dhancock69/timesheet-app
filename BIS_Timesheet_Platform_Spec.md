@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.10  
-**Date:** September 21, 2026  
+**Version:** 1.11  
+**Date:** September 22, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -594,7 +594,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of September 21, 2026)
+## 16.0 Current Status (as of September 22, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -635,6 +635,7 @@ A shared demonstration account is maintained for upper management presentations 
 - **Each employee now CC'd their own timesheet on export (2026-09-11):** `api/send-export-email.js` accepts a per-employee `{employeeId, base64}` list (the same buffer already used for the Storage archive copy — byte-identical, not regenerated) and emails each employee their own single-tab workbook, having re-looked-up their real email from `profiles` server-side rather than trusting the client. Status message reports `Employee copies: N/M sent`. Tested with a real send on a single-employee week; multi-employee attachment scoping verified structurally (same buffer already confirmed correct in the 3-employee Storage archive test) rather than via a second live send, to avoid emailing Jose's/James's real addresses during testing.
 - **Employee week navigation added (2026-09-21):** `EmployeeView` (`src/App.js`) previously only ever operated on the app-load week (module-level `WS`, fixed at page load), so an employee who missed a week — e.g. last pay period — had no way to go back and fill it out. Added `viewWS`/`shiftWeek()` state, mirroring `ManagerView`'s existing `reviewWS` pattern: ‹/› buttons in the sticky header shift the viewed week ±7 days (capped so employees can't navigate into future weeks), with a "This Week" jump-back button. Confirmed via `npx react-scripts build` (compiles clean) — no schema/RLS change needed, since `timesheets` is already keyed uniquely on `(employee_id, week_start)` and RLS already permits an employee to manage any of their own timesheet rows regardless of date. See 8.3.
 - **Daily reminder times split by weekday (2026-09-21):** Daniel reported reminders landing at ~2:18 PM every weekday and that Friday's was supposed to go out at 10 AM. Replaced the single shared 1:30 PM target with per-weekday cron times: Mon–Thu 12:30 PM, Friday 10:00 AM. Initially built as a 4-entry DST-auto-adjusting schedule, then corrected same-day per Daniel to the simpler 2-entry schedule (one fixed UTC time per weekday group) to stay within the confirmed Hobby 2-cron-job cap. Daniel then asked whether a stale post-DST schedule could just send early/late instead of silently skipping — it could: the in-code time-of-day gate (`REMINDER_TARGETS` check) was only ever needed to arbitrate between the old *pair* of same-day cron entries, and serves no purpose with just one entry per weekday group, so it was removed. The function now sends whenever its single daily cron fires (subject to the existing same-day dedup), so a stale schedule degrades to "an hour off" instead of "didn't send." See 5.10 for the schedule and the (now purely cosmetic) manual-DST-maintenance note (next hand-edit for on-the-dot accuracy: 2026-11-01).
+- **Excel export TOTAL row border fix (2026-09-22):** Daniel compared a real export side-by-side against the reference sample (`VDC-Timesheets-DHancock-WE 08-30-2026.xlsx`) and circled two missing vertical grid lines in the TOTAL row, between PROJECT #/TASK #/EXPENSE TYPE. Root cause: `buildTimesheetSheet()` (`src/timesheetTemplate.js`) merged `A{TOTAL_ROW}:C{TOTAL_ROW}` into one blank cell for the "TOTAL" label's row, which erased the column dividers that run down through every row above it; the reference keeps those three columns unmerged (and blank) in that row, with "TOTAL" sitting in column D same as before. Replaced the merge with three separate bordered cells (A/B/C) carrying the same left/right border weights used in the data rows above (A right:T, B left/right:M, C left/right:M), so the grid lines run continuously into the TOTAL row. Verified by regenerating a matching sample export, converting both it and the reference to PDF/PNG via LibreOffice, and diffing the two images — confirmed the two vertical lines now render and nothing else in the row changed. Daniel confirmed the export's blank white background (no Excel gridlines, `showGridLines: false`) should stay as-is. Updated file delivered for Daniel to apply to `src/timesheetTemplate.js` (single-file, surgical diff — no other export logic touched).
 
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.
