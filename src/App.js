@@ -952,6 +952,9 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   const [ptoAll,setPtoAll]=useState([]);
   const [attendance,setAttendance]=useState([]);
   const [newIncident,setNewIncident]=useState({employee_id:"",incident_date:"",type:"Absence",notified:false,minutes_late:"",note:""});
+  const [reportFrom,setReportFrom]=useState(toDateStr(new Date(Date.now()-90*86400000)));
+  const [reportTo,setReportTo]=useState(toDateStr(new Date()));
+  const [reportEmp,setReportEmp]=useState("");
 
   useEffect(()=>{ if(tab==="pto") loadPTO(); },[tab]);
   useEffect(()=>{ if(tab==="attendance") loadAttendance(); },[tab]);
@@ -989,6 +992,25 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
     await supabase.from("attendance_incidents").delete().eq("id",id);
     setAttendance(p=>p.filter(a=>a.id!==id));
     flash("Record removed.");
+  };
+
+  const exportAttendanceReport=async()=>{
+    const ExcelJS=window.ExcelJS;
+    if(!ExcelJS){flash("Excel library not loaded. Please refresh and try again.");return;}
+    const rows=attendance.filter(a=>a.incident_date>=reportFrom&&a.incident_date<=reportTo&&(!reportEmp||a.employee_id===reportEmp));
+    if(!rows.length){flash("No incidents in that range to export.");return;}
+    const wb=new ExcelJS.Workbook();
+    const ws=wb.addWorksheet("Attendance Report");
+    ws.columns=[{width:22},{width:12},{width:12},{width:10},{width:10},{width:10},{width:40},{width:18}];
+    ws.addRow(["EMPLOYEE","EMP #","DATE","TYPE","NOTIFIED","MIN LATE","NOTE","LOGGED BY"]).font={bold:true};
+    rows.sort((a,b)=>a.incident_date<b.incident_date?1:-1).forEach(a=>{
+      const emp=employees.find(e=>e.id===a.employee_id)||{};
+      const logger=employees.find(e=>e.id===a.logged_by)||{};
+      ws.addRow([emp.name||a.profiles?.name||"",emp.emp_no||"",a.incident_date,a.type,a.notified?"Yes":"No",a.type==="Tardy"?(a.minutes_late||""):"",a.note||"",logger.name||""]);
+    });
+    const buf=await wb.xlsx.writeBuffer();
+    downloadWorkbook(buf,`BIS_VDC_Attendance_${reportFrom}_to_${reportTo}.xlsx`);
+    flash("Attendance report exported!");
   };
 
   const flash=msg=>{setSaved(msg);setTimeout(()=>setSaved(""),2500);};
@@ -1077,6 +1099,15 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"attendance",label:"🚫 Attendance"},{id:"settings",label:"⚙ Settings"}];
 
   return(
+    <>
+    <style>{`
+      #attendance-print-area{display:none;}
+      @media print{
+        body *{visibility:hidden;}
+        #attendance-print-area,#attendance-print-area *{visibility:visible;}
+        #attendance-print-area{display:block;position:absolute;top:0;left:0;width:100%;padding:24px;background:#fff;color:#000;}
+      }
+    `}</style>
     <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12,position:"sticky",top:113,zIndex:40,background:"rgba(8,4,4,0.88)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1292,11 +1323,89 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
       {tab==="attendance"&&(
         <div>
           <Card solid style={{padding:20,marginBottom:16}}>
-            <SectionHead>Attendance Summary (Last 90 Days)</SectionHead>
+            <SectionHead>Attendance Report</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>FROM</label>
+                <Input type="date" value={reportFrom} onChange={setReportFrom}/>
+              </div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TO</label>
+                <Input type="date" value={reportTo} onChange={setReportTo}/>
+              </div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMPLOYEE</label>
+                <Select value={reportEmp} onChange={setReportEmp} style={{width:"100%"}}>
+                  <option value="">All Employees</option>
+                  {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <Btn variant="gold" onClick={exportAttendanceReport}>↓ Export to Excel</Btn>
+              <Btn variant="ghost" onClick={()=>window.print()} disabled={!reportEmp}>🖨 Print Employee Summary</Btn>
+            </div>
+            {!reportEmp&&<p style={{color:C.muted,fontSize:11,marginTop:8}}>Select a specific employee above to enable the printable summary. Excel export works for All Employees or one.</p>}
+            {reportEmp&&(()=>{
+              const emp=employees.find(e=>e.id===reportEmp)||{};
+              const rows=attendance.filter(a=>a.employee_id===reportEmp&&a.incident_date>=reportFrom&&a.incident_date<=reportTo).sort((a,b)=>a.incident_date<b.incident_date?1:-1);
+              const absences=rows.filter(a=>a.type==="Absence").length;
+              const tardies=rows.filter(a=>a.type==="Tardy").length;
+              const noCall=rows.filter(a=>!a.notified).length;
+              return(
+                <>
+                  <div style={{background:"#0f0f0f",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginTop:14,fontSize:12,color:C.muted}}>
+                    Preview for <span style={{color:C.text,fontWeight:700}}>{emp.name}</span>, {reportFrom} to {reportTo}: <span style={{color:C.text}}>{absences} absence(s), {tardies} tardy(ies), {noCall} no-call(s)</span>.
+                  </div>
+                  <div id="attendance-print-area">
+                    <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",color:"#000"}}>
+                      <h2 style={{margin:"0 0 4px",fontSize:20}}>Attendance Record</h2>
+                      <p style={{margin:"0 0 16px",fontSize:13,color:"#333"}}>{settings?.company_name||"Beard Integrated Systems"} — VDC/BIM Department</p>
+                      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:12}}>
+                        <tbody>
+                          <tr><td style={{fontWeight:700,padding:"3px 8px 3px 0"}}>Employee:</td><td style={{padding:"3px 0"}}>{emp.name} {emp.emp_no?`(${emp.emp_no})`:""}</td></tr>
+                          <tr><td style={{fontWeight:700,padding:"3px 8px 3px 0"}}>Period:</td><td style={{padding:"3px 0"}}>{reportFrom} to {reportTo}</td></tr>
+                          <tr><td style={{fontWeight:700,padding:"3px 8px 3px 0"}}>Summary:</td><td style={{padding:"3px 0"}}>{absences} absence(s), {tardies} tardy(ies), {noCall} no-call(s)</td></tr>
+                          <tr><td style={{fontWeight:700,padding:"3px 8px 3px 0"}}>Prepared by:</td><td style={{padding:"3px 0"}}>{settings?.supervisor||""}</td></tr>
+                          <tr><td style={{fontWeight:700,padding:"3px 8px 3px 0"}}>Date printed:</td><td style={{padding:"3px 0"}}>{toDateStr(new Date())}</td></tr>
+                        </tbody>
+                      </table>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                        <thead>
+                          <tr style={{borderBottom:"2px solid #000"}}>
+                            <th style={{textAlign:"left",padding:"4px 8px"}}>Date</th>
+                            <th style={{textAlign:"left",padding:"4px 8px"}}>Type</th>
+                            <th style={{textAlign:"left",padding:"4px 8px"}}>Notified</th>
+                            <th style={{textAlign:"left",padding:"4px 8px"}}>Min Late</th>
+                            <th style={{textAlign:"left",padding:"4px 8px"}}>Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.length===0&&<tr><td colSpan={5} style={{padding:"8px",color:"#666"}}>No incidents in this period.</td></tr>}
+                          {rows.map(a=>(
+                            <tr key={a.id} style={{borderBottom:"1px solid #ccc"}}>
+                              <td style={{padding:"4px 8px"}}>{a.incident_date}</td>
+                              <td style={{padding:"4px 8px"}}>{a.type}</td>
+                              <td style={{padding:"4px 8px"}}>{a.notified?"Yes":"No"}</td>
+                              <td style={{padding:"4px 8px"}}>{a.type==="Tardy"?(a.minutes_late||""):""}</td>
+                              <td style={{padding:"4px 8px"}}>{a.note||""}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div style={{marginTop:40,display:"flex",gap:60}}>
+                        <div style={{flex:1,borderTop:"1px solid #000",paddingTop:4,fontSize:11}}>Supervisor Signature</div>
+                        <div style={{flex:1,borderTop:"1px solid #000",paddingTop:4,fontSize:11}}>Date</div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </Card>
+
+          <Card solid style={{padding:20,marginBottom:16}}>
+            <SectionHead>Attendance Summary ({reportFrom} – {reportTo})</SectionHead>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
               {employees.map(emp=>{
-                const cutoff=toDateStr(new Date(Date.now()-90*86400000));
-                const recent=attendance.filter(a=>a.employee_id===emp.id&&a.incident_date>=cutoff);
+                const recent=attendance.filter(a=>a.employee_id===emp.id&&a.incident_date>=reportFrom&&a.incident_date<=reportTo);
                 const absences=recent.filter(a=>a.type==="Absence").length;
                 const tardies=recent.filter(a=>a.type==="Tardy").length;
                 const noCall=recent.filter(a=>!a.notified).length;
@@ -1403,6 +1512,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
         </div>
       )}
     </div>
+    </>
   );
 }
 
