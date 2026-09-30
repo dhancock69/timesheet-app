@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.13  
-**Date:** September 23, 2026  
+**Version:** 1.14  
+**Date:** September 30, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -230,6 +230,26 @@ These UTC hours are correct for **CDT** (current DST state as of 2026-09-21). Al
 
 ---
 
+### 5.11 Table: `attendance_incidents`
+
+Manager-logged attendance incidents (absences, tardies, no-calls). Distinct from `pto_requests`: a PTO request is submitted in advance by the employee; an attendance incident is logged after the fact by a manager/admin about something that went wrong. Added 2026-09-30 for the Admin Console Attendance tab (see 8.6).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid (PK) | Auto-generated |
+| `employee_id` | uuid (FK) | References `profiles.id` |
+| `incident_date` | text | `YYYY-MM-DD`, same local-date convention as `timesheets.week_start` |
+| `type` | text | `Absence` or `Tardy` |
+| `notified` | boolean | Whether the employee called/texted before their shift. `false` covers a no-call/no-show without needing a separate incident type |
+| `minutes_late` | numeric | Only meaningful for `Tardy`; null for `Absence` |
+| `note` | text | Optional free-text detail from the logging manager |
+| `logged_by` | uuid (FK) | References `profiles.id` — the manager/admin who logged the incident |
+| `created_at` | timestamptz | Auto-set on insert |
+
+Created after the October 30, 2026 Supabase Data API grant change took effect for new tables (see 6.6), so its creation SQL includes explicit `authenticated`/`service_role` grants alongside the table definition — no `anon` grant, since the app always requires login.
+
+---
+
 ## 6.0 Row Level Security (RLS) Policies
 
 RLS is enabled on all tables. The following policies are required:
@@ -289,6 +309,15 @@ grant select, insert, update, delete on public.new_table to service_role;
 - If the app returns `permission denied` on a new table, the error message includes the exact `GRANT` statement to run.
 - Schema changes are currently run by hand in the Supabase SQL editor (no migration files). If migrations or preview branches are adopted later, the grants must be in the migration file itself.
 - Verify exposure in Supabase → Project Settings → Data API.
+
+---
+
+### 6.7 `attendance_incidents`
+| Policy | Operation | Rule |
+|---|---|---|
+| Managers can manage attendance incidents | ALL | Caller has `role='admin'` or `is_manager=true` |
+
+No employee-facing policy — this table is manager/admin-only territory, same audience as PTO History, and isn't read anywhere in `EmployeeView`.
 
 ---
 
@@ -442,7 +471,7 @@ Props: `{ employees, projects, settings }`
 
 Props: `{ employees, setEmployees, projects, setProjects, settings, setSettings, currentUser }`
 
-Five sub-tabs: **Team · Projects · Locations · PTO History · Settings**
+Six sub-tabs: **Team · Projects · Locations · PTO History · Attendance · Settings**
 
 #### Team Tab
 - Lists all employees with role, emp_no, manager status
@@ -468,6 +497,12 @@ Five sub-tabs: **Team · Projects · Locations · PTO History · Settings**
 #### PTO History Tab
 - Lists all PTO requests across all employees
 - Manager can approve or reject with notes
+
+#### Attendance Tab (added 2026-09-30)
+- Per-employee summary cards: absence count, tardy count, and no-call count over the last 90 days (computed client-side from `attendance_incidents`, filtered by `incident_date`)
+- "Log New Incident" form: employee, date, type (Absence/Tardy), a "called/texted before shift" checkbox (unchecked = no-call), minutes late (Tardy only), optional note. No approval workflow — the manager entering it is the record.
+- Chronological incident log below the form, each row removable (confirm-then-delete, same pattern as Team/Projects rows)
+- Admin-only, same tab bar as PTO History; no shortcut entry point was added to Manager Review — the Admin Console tab is the sole way to log an incident for now (deferred, see 16.3)
 
 #### Settings Tab
 - Company name, supervisor name, reminder time, reminder days
@@ -662,6 +697,7 @@ A shared demonstration account is maintained for upper management presentations 
 - **Excel export TOTAL row border fix (2026-09-22):** Daniel compared a real export side-by-side against the reference sample (`VDC-Timesheets-DHancock-WE 08-30-2026.xlsx`) and circled two missing vertical grid lines in the TOTAL row, between PROJECT #/TASK #/EXPENSE TYPE. Root cause: `buildTimesheetSheet()` (`src/timesheetTemplate.js`) merged `A{TOTAL_ROW}:C{TOTAL_ROW}` into one blank cell for the "TOTAL" label's row, which erased the column dividers that run down through every row above it; the reference keeps those three columns unmerged (and blank) in that row, with "TOTAL" sitting in column D same as before. Replaced the merge with three separate bordered cells (A/B/C) carrying the same left/right border weights used in the data rows above (A right:T, B left/right:M, C left/right:M), so the grid lines run continuously into the TOTAL row. Verified by regenerating a matching sample export, converting both it and the reference to PDF/PNG via LibreOffice, and diffing the two images — confirmed the two vertical lines now render and nothing else in the row changed. Daniel confirmed the export's blank white background (no Excel gridlines, `showGridLines: false`) should stay as-is. Updated file delivered for Daniel to apply to `src/timesheetTemplate.js` (single-file, surgical diff — no other export logic touched).
 - **Supabase Data API grant rule documented (2026-09-23):** Supabase notified that from October 30, 2026, new `public` tables no longer get automatic Data API grants. Existing 8 tables are unaffected. Added 6.6 — every new table must include `authenticated` + `service_role` grants (no `anon`) in the same SQL that creates it.
 - **Friday reminder moved to 9:00 AM (2026-09-23):** `vercel.json` Friday cron changed `0 15 * * 5` → `0 14 * * 5` (9:00 AM CDT) to offset the ~1 hour delivery delay Daniel observed. Mon–Thu unchanged. See 5.10.
+- **Attendance tracker built, Admin tab only (2026-09-30):** New `attendance_incidents` table (5.11) + RLS policy (6.7) for manager-logged absences/tardies, distinct from the existing `pto_requests` (a request made in advance) since this is a record made after the fact by a manager. New "🚫 Attendance" tab in `AdminConsole` (8.6, `src/App.js`) between PTO History and Settings: a 90-day per-employee summary (absence/tardy/no-call counts), a log-new-incident form, and a removable chronological log. Scoped deliberately to just the Admin tab for now — no "Log Incident" shortcut button was added to Manager Review (that was the other option discussed; see 16.3). Also cleared two harmless leftovers from the repo working tree: an empty stray file named `git` and an outdated `Claude outputs/` folder holding a stale spec copy. Confirmed via `npx react-scripts build` (compiles clean). Requires the SQL migration in the delivery message to be run in the Supabase SQL editor before the tab will load data — not yet confirmed run.
 
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.
@@ -670,6 +706,7 @@ A shared demonstration account is maintained for upper management presentations 
 ### 16.3 Wishlist / Not Started
 
 - Mobile layout optimization
+- "🚫 Log Incident" shortcut button on employee cards in Manager Review, for logging an attendance incident the moment it happens rather than through the Admin Console — deferred when the Attendance tab was built (2026-09-30); Admin Console tab is the source of truth in the meantime
 - Surfacing archived Storage record links back in the UI (e.g. a "view record" link on the employee card) — not built, archiving is currently write-only
 - Phase 3 items from Section 12.0 (demo/read-only mode, date-range export, etc.)
 

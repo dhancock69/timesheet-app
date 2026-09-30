@@ -950,12 +950,44 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   const [settingsForm,setSettingsForm]=useState({...settings,locations:(settings?.locations||DEFAULT_LOCATIONS)});
   const [newLocation,setNewLocation]=useState("");
   const [ptoAll,setPtoAll]=useState([]);
+  const [attendance,setAttendance]=useState([]);
+  const [newIncident,setNewIncident]=useState({employee_id:"",incident_date:"",type:"Absence",notified:false,minutes_late:"",note:""});
 
   useEffect(()=>{ if(tab==="pto") loadPTO(); },[tab]);
+  useEffect(()=>{ if(tab==="attendance") loadAttendance(); },[tab]);
 
   const loadPTO=async()=>{
     const {data}=await supabase.from("pto_requests").select("*,profiles(name)").order("created_at",{ascending:false}).limit(50);
     setPtoAll(data||[]);
+  };
+
+  const loadAttendance=async()=>{
+    const {data}=await supabase.from("attendance_incidents").select("*,profiles(name)").order("incident_date",{ascending:false});
+    setAttendance(data||[]);
+  };
+
+  const logIncident=async()=>{
+    if(!newIncident.employee_id||!newIncident.incident_date) return;
+    const {error}=await supabase.from("attendance_incidents").insert({
+      employee_id:newIncident.employee_id,
+      incident_date:newIncident.incident_date,
+      type:newIncident.type,
+      notified:!!newIncident.notified,
+      minutes_late:newIncident.type==="Tardy"?(parseFloat(newIncident.minutes_late)||null):null,
+      note:newIncident.note.trim()||null,
+      logged_by:currentUser?.id||null
+    });
+    if(error){flash("Save error: "+error.message);return;}
+    setNewIncident({employee_id:"",incident_date:"",type:"Absence",notified:false,minutes_late:"",note:""});
+    flash("Incident logged!");
+    loadAttendance();
+  };
+
+  const removeIncident=async id=>{
+    if(!window.confirm("Remove this attendance record?")) return;
+    await supabase.from("attendance_incidents").delete().eq("id",id);
+    setAttendance(p=>p.filter(a=>a.id!==id));
+    flash("Record removed.");
   };
 
   const flash=msg=>{setSaved(msg);setTimeout(()=>setSaved(""),2500);};
@@ -1041,7 +1073,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
   const removeLocation=loc=>setSettingsForm(p=>({...p,locations:(p.locations||[]).filter(l=>l!==loc)}));
 
-  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"settings",label:"⚙ Settings"}];
+  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"attendance",label:"🚫 Attendance"},{id:"settings",label:"⚙ Settings"}];
 
   return(
     <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
@@ -1249,6 +1281,96 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
                 <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
                   {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
                 </Badge>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {/* ATTENDANCE */}
+      {tab==="attendance"&&(
+        <div>
+          <Card solid style={{padding:20,marginBottom:16}}>
+            <SectionHead>Attendance Summary (Last 90 Days)</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+              {employees.map(emp=>{
+                const cutoff=toDateStr(new Date(Date.now()-90*86400000));
+                const recent=attendance.filter(a=>a.employee_id===emp.id&&a.incident_date>=cutoff);
+                const absences=recent.filter(a=>a.type==="Absence").length;
+                const tardies=recent.filter(a=>a.type==="Tardy").length;
+                const noCall=recent.filter(a=>!a.notified).length;
+                return(
+                  <div key={emp.id} style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+                    <div style={{fontWeight:800,color:C.text,fontSize:13,marginBottom:8}}>{emp.name}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                      <span style={{color:C.muted}}>Absences</span>
+                      <span style={{color:absences>0?C.red:C.muted,fontWeight:700}}>{absences}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:noCall>0?4:0}}>
+                      <span style={{color:C.muted}}>Tardies</span>
+                      <span style={{color:tardies>0?C.amber:C.muted,fontWeight:700}}>{tardies}</span>
+                    </div>
+                    {noCall>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                      <span style={{color:C.muted}}>No-call</span>
+                      <span style={{color:C.red,fontWeight:700}}>{noCall}</span>
+                    </div>}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card solid style={{padding:20,marginBottom:16}}>
+            <SectionHead>Log New Incident</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>EMPLOYEE</label>
+                <Select value={newIncident.employee_id} onChange={v=>setNewIncident(p=>({...p,employee_id:v}))} style={{width:"100%"}}>
+                  <option value="">Select…</option>
+                  {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </Select>
+              </div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>DATE</label>
+                <Input type="date" value={newIncident.incident_date} onChange={v=>setNewIncident(p=>({...p,incident_date:v}))}/>
+              </div>
+              <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>TYPE</label>
+                <Select value={newIncident.type} onChange={v=>setNewIncident(p=>({...p,type:v,minutes_late:v==="Absence"?"":p.minutes_late}))} style={{width:"100%"}}>
+                  <option value="Absence">Absence</option>
+                  <option value="Tardy">Tardy</option>
+                </Select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:16,alignItems:"flex-end",marginBottom:12,flexWrap:"wrap"}}>
+              {newIncident.type==="Tardy"&&(
+                <div style={{width:160}}><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>MINUTES LATE</label>
+                  <Input type="number" value={newIncident.minutes_late} onChange={v=>setNewIncident(p=>({...p,minutes_late:v}))} placeholder="e.g. 15"/>
+                </div>
+              )}
+              <label style={{display:"flex",alignItems:"center",gap:8,color:C.muted,fontSize:13,cursor:"pointer",paddingBottom:9}}>
+                <input type="checkbox" checked={newIncident.notified} onChange={e=>setNewIncident(p=>({...p,notified:e.target.checked}))}/>
+                Called/texted before shift
+              </label>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:5}}>NOTE (OPTIONAL)</label>
+              <Textarea value={newIncident.note} onChange={v=>setNewIncident(p=>({...p,note:v}))} rows={2} placeholder="Additional details…"/>
+            </div>
+            <Btn variant="primary" onClick={logIncident} disabled={!newIncident.employee_id||!newIncident.incident_date}>🚫 Log Incident</Btn>
+          </Card>
+
+          <Card solid style={{padding:20}}>
+            <SectionHead>Incident Log</SectionHead>
+            {attendance.length===0&&<p style={{color:C.muted,fontSize:13}}>No incidents logged yet.</p>}
+            {attendance.map(a=>(
+              <div key={a.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap",fontSize:13}}>
+                <div>
+                  <span style={{color:C.text,fontWeight:700}}>{a.profiles?.name}</span>
+                  <span style={{color:a.type==="Absence"?C.red:C.amber,marginLeft:10,fontWeight:700}}>{a.type}</span>
+                  <span style={{color:C.muted,marginLeft:10}}>{a.incident_date}</span>
+                  {a.type==="Tardy"&&a.minutes_late?<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {a.minutes_late} min late</span>:null}
+                  {!a.notified&&<span style={{color:C.red,marginLeft:8,fontSize:12,fontWeight:700}}>· No call</span>}
+                  {a.note&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {a.note}</span>}
+                </div>
+                <Btn variant="ghost" small onClick={()=>removeIncident(a.id)}>✕ Remove</Btn>
               </div>
             ))}
           </Card>
