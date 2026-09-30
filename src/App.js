@@ -962,7 +962,8 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
 
   const loadAttendance=async()=>{
-    const {data}=await supabase.from("attendance_incidents").select("*,profiles(name)").order("incident_date",{ascending:false});
+    const {data,error}=await supabase.from("attendance_incidents").select("*,profiles!attendance_incidents_employee_id_fkey(name)").order("incident_date",{ascending:false});
+    if(error){flash("Load error: "+error.message);return;}
     setAttendance(data||[]);
   };
 
