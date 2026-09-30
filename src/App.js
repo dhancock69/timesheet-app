@@ -873,6 +873,26 @@ function ManagerView({employees,projects,settings}) {
               {ts?.status==="approved"&&<Badge color="green">✓ Approved</Badge>}
               {ts?.status==="rejected"&&<Badge color="red">✗ Rejected</Badge>}
             </div>
+            {(()=>{
+              const totReg=detail.entries.reduce((s,e)=>s+(parseFloat(e.reg_hours)||0),0);
+              const totOt=detail.entries.reduce((s,e)=>s+(parseFloat(e.ot_hours)||0),0);
+              const totDt=detail.entries.reduce((s,e)=>s+(parseFloat(e.dt_hours)||0),0);
+              const grand=totReg+totOt+totDt;
+              return(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,background:"rgba(8,4,4,0.88)",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 16px",marginBottom:16}}>
+                  <span style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:.6,textTransform:"uppercase"}}>Week Total</span>
+                  <span style={{fontSize:13,color:C.text}}>
+                    REG <strong style={{fontSize:15}}>{totReg}</strong>
+                    <span style={{color:C.muted,margin:"0 8px"}}>·</span>
+                    OT <strong style={{color:C.amber,fontSize:15}}>{totOt}</strong>
+                    <span style={{color:C.muted,margin:"0 8px"}}>·</span>
+                    DT <strong style={{color:C.red,fontSize:15}}>{totDt}</strong>
+                    <span style={{color:C.muted,margin:"0 8px"}}>·</span>
+                    <span style={{color:C.muted}}>Total</span> <strong style={{color:C.green,fontSize:15}}>{grand}</strong>
+                  </span>
+                </div>
+              );
+            })()}
             {DAYS.map(day=>{
               const dayEntries=detail.entries.filter(e=>e.day_name===day);
               const rep=detail.reports.find(r=>r.day_name===day);
