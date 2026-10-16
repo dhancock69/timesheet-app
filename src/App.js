@@ -297,61 +297,6 @@ function LoginScreen({onLogin}) {
   );
 }
 
-// ── PTO Request Modal ─────────────────────────────────────────────────────────
-function PTOModal({profile,onClose,onSubmit}) {
-  const [type,setType]=useState("PTO");
-  const [startDate,setStartDate]=useState("");
-  const [endDate,setEndDate]=useState("");
-  const [hours,setHours]=useState("");
-  const [reason,setReason]=useState("");
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState("");
-
-  const handleSubmit=async()=>{
-    if(!startDate||!endDate){setError("Please select start and end dates.");return;}
-    setLoading(true);
-    const {error:e}=await supabase.from("pto_requests").insert({
-      employee_id:profile.id, request_type:type,
-      start_date:startDate, end_date:endDate,
-      hours:parseFloat(hours)||null, reason, status:"pending"
-    });
-    if(e){setError(e.message);setLoading(false);return;}
-    onSubmit();
-    onClose();
-  };
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <Card style={{padding:28,width:"100%",maxWidth:440}}>
-        <h3 style={{margin:"0 0 20px",color:C.text,fontSize:16,fontWeight:800}}>📅 Request Time Off</h3>
-        {error&&<div style={{background:C.redDim,color:C.red,borderRadius:8,padding:"10px 14px",fontSize:13,marginBottom:14}}>{error}</div>}
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>TYPE</label>
-            <Select value={type} onChange={setType} style={{width:"100%"}}>
-              <option value="PTO">PTO (Paid Time Off)</option>
-              <option value="Unpaid">Unpaid Time Off</option>
-              <option value="Sick">Sick Leave</option>
-              <option value="Holiday">Holiday</option>
-              <option value="Jury Duty">Jury Duty</option>
-              <option value="Leave of Absence">Leave of Absence</option>
-            </Select>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>START DATE</label><Input value={startDate} onChange={setStartDate} type="date"/></div>
-            <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>END DATE</label><Input value={endDate} onChange={setEndDate} type="date"/></div>
-          </div>
-          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>HOURS (optional)</label><Input value={hours} onChange={setHours} type="number" placeholder="e.g. 8"/></div>
-          <div><label style={{color:C.muted,fontSize:11,fontWeight:700,display:"block",marginBottom:6}}>REASON (optional)</label><Textarea value={reason} onChange={setReason} placeholder="Brief description..." rows={2}/></div>
-        </div>
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-          <Btn variant="ghost" small onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" small onClick={handleSubmit} disabled={loading}>{loading?"Submitting…":"Submit Request"}</Btn>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 // ── Employee Timesheet View ───────────────────────────────────────────────────
 function EmployeeView({profile,projects,settings}) {
   const [viewWS,setViewWS]=useState(WS);
@@ -364,8 +309,6 @@ function EmployeeView({profile,projects,settings}) {
   const [loading,setLoading]=useState(true);
   const [timesheetId,setTimesheetId]=useState(null);
   const [rejectionNote,setRejectionNote]=useState("");
-  const [showPTO,setShowPTO]=useState(false);
-  const [myPTO,setMyPTO]=useState([]);
   const [showReminderPanel,setShowReminderPanel]=useState(false);
   const [extraReminder,setExtraReminder]=useState("");
   const [saving,setSaving]=useState(false);
@@ -388,7 +331,6 @@ function EmployeeView({profile,projects,settings}) {
     setTimesheetId(null); setSubmitted(false); setRejectionNote(""); setSaveState("idle"); dirtyRef.current=false;
     loadTimesheet();
   },[viewWeekKey]);
-  useEffect(()=>{ loadMyPTO(); },[]);
 
   const loadTimesheet=async()=>{
     setLoading(true);
@@ -407,11 +349,6 @@ function EmployeeView({profile,projects,settings}) {
       }));
     }
     setLoading(false);
-  };
-
-  const loadMyPTO=async()=>{
-    const {data}=await supabase.from("pto_requests").select("*").eq("employee_id",profile.id).order("created_at",{ascending:false}).limit(10);
-    setMyPTO(data||[]);
   };
 
   const updateEntry=(dayIdx,projId,field,val)=>{
@@ -544,7 +481,6 @@ function EmployeeView({profile,projects,settings}) {
 
   return(
     <div style={{maxWidth:780,margin:"0 auto",position:"relative",zIndex:1}}>
-      {showPTO&&<PTOModal profile={profile} onClose={()=>setShowPTO(false)} onSubmit={loadMyPTO}/>}
 
       <div style={{position:"sticky",top:113,zIndex:40,background:"rgba(6,4,4,0.22)",padding:"10px 16px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:20}}>
         {/* Row 1: Name + hours summary + status */}
@@ -573,7 +509,6 @@ function EmployeeView({profile,projects,settings}) {
         </div>
         {/* Row 2: Action buttons */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-          <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
           <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
           {!submitted&&<>
             <Btn variant="primary" small onClick={()=>handleSave(true)} disabled={grandTotal===0||saving}>Submit ✓</Btn>
@@ -606,25 +541,6 @@ function EmployeeView({profile,projects,settings}) {
         </Card>
       )}
 
-
-      {/* PTO history */}
-      {myPTO.length>0&&(
-        <Card style={{padding:16,marginBottom:20}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:13,marginBottom:12}}>My Time Off Requests</div>
-          {myPTO.map(req=>(
-            <div key={req.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
-              <div>
-                <span style={{color:C.gold,fontWeight:700}}>{req.request_type}</span>
-                <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
-                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
-              </div>
-              <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
-                {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
-              </Badge>
-            </div>
-          ))}
-        </Card>
-      )}
 
       {days.map((day,i)=>{
         const isToday=isCurrentWeek&&day.name===todayName();
@@ -708,7 +624,6 @@ function EmployeeView({profile,projects,settings}) {
 function ManagerView({employees,projects,settings}) {
   const [selected,setSelected]=useState(null);
   const [detail,setDetail]=useState(null);
-  const [ptoRequests,setPtoRequests]=useState([]);
   const [status,setStatus]=useState("");
   const [rejectNote,setRejectNote]=useState("");
   const [showReject,setShowReject]=useState(null);
@@ -729,8 +644,7 @@ function ManagerView({employees,projects,settings}) {
   const loadData=async()=>{
     setLoading(true);
     const {data:ts}=await supabase.from("timesheets").select("*,profiles(name,emp_no)").eq("week_start",reviewWeekKey);
-    const {data:pto}=await supabase.from("pto_requests").select("*,profiles(name)").eq("status","pending").order("created_at",{ascending:false});
-    setTimesheets(ts||[]); setPtoRequests(pto||[]);
+    setTimesheets(ts||[]);
     setLoading(false);
   };
 
@@ -754,11 +668,6 @@ function ManagerView({employees,projects,settings}) {
     const{error}=await supabase.from("timesheets").update({status:"rejected",rejected_at:new Date().toISOString(),rejection_note:rejectNote}).eq("id",tsId);
     setShowReject(null); setRejectNote("");
     setStatus(error?`Reject failed: ${error.message}`:"Timesheet sent back to employee.");
-    loadData();
-  };
-
-  const handlePTO=async(id,approved)=>{
-    await supabase.from("pto_requests").update({status:approved?"approved":"rejected",reviewed_at:new Date().toISOString()}).eq("id",id);
     loadData();
   };
 
@@ -899,27 +808,6 @@ function ManagerView({employees,projects,settings}) {
         </div>
       </div>
 
-      {/* PTO Requests */}
-      {ptoRequests.length>0&&(
-        <Card solid style={{padding:20,marginBottom:24}}>
-          <SectionHead>📅 Pending Time Off Requests</SectionHead>
-          {ptoRequests.map(req=>(
-            <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap"}}>
-              <div>
-                <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
-                <span style={{color:C.gold,marginLeft:10,fontSize:13}}>{req.request_type}</span>
-                <span style={{color:C.muted,marginLeft:10,fontSize:13}}>{req.start_date} → {req.end_date}</span>
-                {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <Btn variant="green" small onClick={()=>handlePTO(req.id,true)}>✓ Approve</Btn>
-                <Btn variant="danger" small onClick={()=>handlePTO(req.id,false)}>✕ Deny</Btn>
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
       {/* Employee cards */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:24}}>
         {employees.map(emp=>{
@@ -1035,20 +923,13 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   const [editProj,setEditProj]=useState(null);
   const [settingsForm,setSettingsForm]=useState({...settings,locations:(settings?.locations||DEFAULT_LOCATIONS)});
   const [newLocation,setNewLocation]=useState("");
-  const [ptoAll,setPtoAll]=useState([]);
   const [attendance,setAttendance]=useState([]);
   const [newIncident,setNewIncident]=useState({employee_id:"",incident_date:"",type:"Absence",notified:false,minutes_late:"",note:""});
   const [reportFrom,setReportFrom]=useState(toDateStr(new Date(Date.now()-90*86400000)));
   const [reportTo,setReportTo]=useState(toDateStr(new Date()));
   const [reportEmp,setReportEmp]=useState("");
 
-  useEffect(()=>{ if(tab==="pto") loadPTO(); },[tab]);
   useEffect(()=>{ if(tab==="attendance") loadAttendance(); },[tab]);
-
-  const loadPTO=async()=>{
-    const {data}=await supabase.from("pto_requests").select("*,profiles(name)").order("created_at",{ascending:false}).limit(50);
-    setPtoAll(data||[]);
-  };
 
   const loadAttendance=async()=>{
     const {data,error}=await supabase.from("attendance_incidents").select("*,profiles!attendance_incidents_employee_id_fkey(name)").order("incident_date",{ascending:false});
@@ -1182,7 +1063,7 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
   };
   const removeLocation=loc=>setSettingsForm(p=>({...p,locations:(p.locations||[]).filter(l=>l!==loc)}));
 
-  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"pto",label:"📅 PTO History"},{id:"attendance",label:"🚫 Attendance"},{id:"settings",label:"⚙ Settings"}];
+  const tabs=[{id:"team",label:"👥 Team"},{id:"projects",label:"📋 Projects"},{id:"locations",label:"📍 Locations"},{id:"attendance",label:"🚫 Attendance"},{id:"settings",label:"⚙ Settings"}];
 
   return(
     <>
@@ -1350,58 +1231,6 @@ function AdminConsole({employees,setEmployees,projects,setProjects,settings,setS
             </div>
           </Card>
           <Btn variant="gold" onClick={saveSettings}>Save Locations</Btn>
-        </div>
-      )}
-
-      {/* PTO HISTORY */}
-      {tab==="pto"&&(
-        <div>
-          {/* Accrual summary per employee */}
-          <Card solid style={{padding:20,marginBottom:16}}>
-            <SectionHead>PTO Accrual Summary</SectionHead>
-            <div style={{background:"rgba(8,4,4,0.88)",borderRadius:8,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
-              <span style={{color:C.muted,fontSize:12}}>Accrual rate: </span>
-              <span style={{color:C.gold,fontWeight:700}}>1.54 hrs PTO per 40 hrs worked</span>
-              <span style={{color:C.muted,fontSize:12,marginLeft:16}}>({(1.54/40*100).toFixed(4)}% of REG hours)</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
-              {employees.map(emp=>{
-                const used=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="approved"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
-                const pending=ptoAll.filter(r=>r.employee_id===emp.id&&r.status==="pending"&&r.hours).reduce((s,r)=>s+(parseFloat(r.hours)||0),0);
-                return(
-                  <div key={emp.id} style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"14px 16px",border:`1px solid ${C.border}`}}>
-                    <div style={{fontWeight:800,color:C.text,fontSize:13,marginBottom:8}}>{emp.name}</div>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
-                      <span style={{color:C.muted}}>Used (approved)</span>
-                      <span style={{color:C.amber,fontWeight:700}}>{used.toFixed(1)} hrs</span>
-                    </div>
-                    {pending>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-                      <span style={{color:C.muted}}>Pending requests</span>
-                      <span style={{color:C.gold,fontWeight:700}}>{pending.toFixed(1)} hrs</span>
-                    </div>}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-          <Card solid style={{padding:20}}>
-            <SectionHead>All Time Off Requests</SectionHead>
-            {ptoAll.length===0&&<p style={{color:C.muted,fontSize:13}}>No requests yet.</p>}
-            {ptoAll.map(req=>(
-              <div key={req.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}`,gap:12,flexWrap:"wrap",fontSize:13}}>
-                <div>
-                  <span style={{color:C.text,fontWeight:700}}>{req.profiles?.name}</span>
-                  <span style={{color:C.gold,marginLeft:10}}>{req.request_type}</span>
-                  <span style={{color:C.muted,marginLeft:10}}>{req.start_date} → {req.end_date}</span>
-                  {req.hours&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.hours} hrs</span>}
-                  {req.reason&&<span style={{color:C.muted,marginLeft:8,fontSize:12}}>· {req.reason}</span>}
-                </div>
-                <Badge color={req.status==="approved"?"green":req.status==="rejected"?"red":"amber"}>
-                  {req.status.charAt(0).toUpperCase()+req.status.slice(1)}
-                </Badge>
-              </div>
-            ))}
-          </Card>
         </div>
       )}
 

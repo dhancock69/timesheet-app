@@ -1,7 +1,7 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.15  
+**Version:** 1.16  
 **Date:** October 16, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
@@ -159,7 +159,7 @@ One record per day per timesheet. Stores location, notes, and daily report text.
 
 ### 5.7 Table: `pto_requests`
 
-Employee PTO requests reviewed by managers.
+Employee PTO requests reviewed by managers. **No longer used by the app UI as of 2026-10-16** — PTO is requested, approved and tracked in isolved, so all PTO screens were removed (see 16.1). The table and its rows were deliberately kept (nothing deleted) for the historical record; the only remaining reader is `api/daily-reminder.js`, which still skips anyone with an approved request covering today (harmless — no new requests can be created).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -331,7 +331,7 @@ alter table public.daily_reports
   add constraint daily_reports_ts_day_key unique (timesheet_id, day_name);
 ```
 
-Until they exist, `writeRows()` gets Postgres error `42P10` and falls back to the old delete-then-insert path, so the app works either way — the constraints just remove the data-loss risk. If an `alter` fails with a duplicate-key error, duplicate rows already exist and must be cleaned up first.
+**Status: applied 2026-10-16** (run by Daniel in the SQL editor — "Success. No rows returned"), so auto-save is on the upsert path. Until they existed, `writeRows()` got Postgres error `42P10` and falls back to the old delete-then-insert path, so the app works either way — the constraints just remove the data-loss risk. If an `alter` fails with a duplicate-key error, duplicate rows already exist and must be cleaned up first.
 
 ---
 
@@ -346,7 +346,7 @@ Brand Constants & Utilities
 BIM Slideshow Component (BeardCanvas)
 UI Primitives (Badge, Btn, Input, Textarea, Select, Card, SectionHead)
 LoginScreen
-PTOModal
+PTOModal  (removed 2026-10-16)
 EmployeeView
 ManagerView
 AdminConsole
@@ -433,11 +433,11 @@ Props: `{ profile, projects, settings }`
 
 ---
 
-### 8.4 `PTOModal`
+### 8.4 `PTOModal` (removed)
 
 Props: `{ profile, onClose, onSubmit }`
 
-Allows employees to submit PTO requests with start date, end date, hours, and optional note. Inserts into `pto_requests` table.
+**Removed 2026-10-16.** Previously let employees submit PTO requests into `pto_requests`. PTO now lives in isolved; employees log PTO days on their timesheet against the PTO charge code (a regular project in Admin → Projects, assigned per employee).
 
 ---
 
@@ -486,7 +486,7 @@ Props: `{ employees, projects, settings }`
 
 Props: `{ employees, setEmployees, projects, setProjects, settings, setSettings, currentUser }`
 
-Six sub-tabs: **Team · Projects · Locations · PTO History · Attendance · Settings**
+Five sub-tabs: **Team · Projects · Locations · Attendance · Settings** (PTO History removed 2026-10-16)
 
 #### Team Tab
 - Lists all employees with role, emp_no, manager status
@@ -508,10 +508,6 @@ Six sub-tabs: **Team · Projects · Locations · PTO History · Attendance · Se
 #### Locations Tab
 - Manages the list of location options shown on employee timesheets
 - Stored as JSON string in `app_settings` under key `locations`
-
-#### PTO History Tab
-- Lists all PTO requests across all employees
-- Manager can approve or reject with notes
 
 #### Attendance Tab (added 2026-09-30, reporting added same day)
 - "Attendance Report" card: From/To date range + an Employee filter (All or one). Drives three things: the summary cards below it, the Excel export, and the printable per-employee summary.
@@ -679,7 +675,7 @@ A shared demonstration account is maintained for upper management presentations 
 - Auth with role-based access (employee, manager, admin)
 - Time entry with REG/OT/DT per project code per day
 - Manager Review workflow with week navigation (‹/› arrows) and approval/rejection
-- PTO request and tracking system (accrual math removed — accrual is tracked externally by BIS HR)
+- ~~PTO request and tracking system~~ — removed 2026-10-16; PTO is handled in isolved
 - Excel export via SheetJS, multi-tab, matching the BIS payroll template
 - Admin Console: Team, Projects, Locations, PTO History, Settings tabs
 - Beard-branded UI with rotating BIM background images and diagonal watermark
@@ -718,7 +714,9 @@ A shared demonstration account is maintained for upper management presentations 
 - **Attendance tracker built, Admin tab only (2026-09-30):** New `attendance_incidents` table (5.11) + RLS policy (6.7) for manager-logged absences/tardies, distinct from the existing `pto_requests` (a request made in advance) since this is a record made after the fact by a manager. New "🚫 Attendance" tab in `AdminConsole` (8.6, `src/App.js`) between PTO History and Settings: a 90-day per-employee summary (absence/tardy/no-call counts), a log-new-incident form, and a removable chronological log. Scoped deliberately to just the Admin tab for now — no "Log Incident" shortcut button was added to Manager Review (that was the other option discussed; see 16.3). Also cleared two harmless leftovers from the repo working tree: an empty stray file named `git` and an outdated `Claude outputs/` folder holding a stale spec copy. Confirmed via `npx react-scripts build` (compiles clean). Requires the SQL migration in the delivery message to be run in the Supabase SQL editor before the tab will load data — run same day, confirmed via direct Supabase REST calls. **Follow-up fix (2026-09-30):** after the migration ran, inserts worked but the tab's summary cards and incident log stayed empty — `loadAttendance()`'s `select("*,profiles(name)")` hit Supabase's ambiguous-embedding error (`PGRST201`, HTTP 300) because `attendance_incidents` has two FKs to `profiles` (`employee_id` and `logged_by`), and the original query wasn't checking for the error, so it silently left the list empty while inserts kept succeeding underneath (5 real test rows were already sitting in the table, confirmed via a raw SQL `select *`). Fixed by naming the specific constraint — `profiles!attendance_incidents_employee_id_fkey(name)` — and added error handling so a future load failure shows as a flash message instead of silently no-op'ing. Verified directly against the live REST API (was 300/`PGRST201`, now 200) before rebuilding.
 - **Attendance reporting added (2026-09-30):** Daniel asked for reporting on the Attendance tab right after the fix above went live. Added a date-range + employee filter that drives the existing summary cards (replacing the hardcoded 90-day cutoff), an Excel export (`BIS_VDC_Attendance_{from}_to_{to}.xlsx`, reusing the existing `downloadWorkbook()`/ExcelJS pattern from 8.5), and a printable per-employee summary (hidden `#attendance-print-area` + `@media print` CSS, `window.print()`) for handing off a single employee's record. Admin Console-only, no employee-facing view — see 8.6.
 
-- **Auto-save replaced the Save Draft button (2026-10-16):** Daniel asked for auto-save instead of the manual button. `EmployeeView` now saves ~1.5 s after the last edit, on week change, on tab hide/close, and when leaving the view, with a Saving… / ✓ All changes saved / ⚠ Not saved — retrying header badge. The save path was rewritten from delete-then-insert to upsert-in-place (`writeRows()`), because auto-save runs the save dozens of times a day and a connection drop between the delete and insert would have wiped the week. Requires the two unique constraints in 6.8; until they're added the code falls back to the old path. Also fixed the Reminders panel text (still said Fri 10:00 AM; now 9:00 AM per the 2026-09-23 change). Built in a separate worktree from `origin/main` so Daniel's unpushed local `feature/pto-calendar-invites` branch was left untouched. Verified with `CI=true react-scripts build` (clean); not yet exercised live against Supabase.
+- **Auto-save replaced the Save Draft button (2026-10-16):** Daniel asked for auto-save instead of the manual button. `EmployeeView` now saves ~1.5 s after the last edit, on week change, on tab hide/close, and when leaving the view, with a Saving… / ✓ All changes saved / ⚠ Not saved — retrying header badge. The save path was rewritten from delete-then-insert to upsert-in-place (`writeRows()`), because auto-save runs the save dozens of times a day and a connection drop between the delete and insert would have wiped the week. Requires the two unique constraints in 6.8 — applied the same day, so the safe upsert path is active. Also fixed the Reminders panel text (still said Fri 10:00 AM; now 9:00 AM per the 2026-09-23 change). Built in a separate worktree from `origin/main` so Daniel's unpushed local `feature/pto-calendar-invites` branch was left untouched. Verified with `CI=true react-scripts build` (clean); not yet exercised live against Supabase.
+
+- **PTO removed from the app (2026-10-16):** Daniel noted PTO is requested, approved and tracked in isolved, so the app's PTO features were double entry (and a test request he'd rejected was stuck at the top of his timesheet with no way to clear it). Removed: employee "📅 Request Time Off" button + `PTOModal`, the "My Time Off Requests" card, Manager Review's "Pending Time Off Requests" section (`handlePTO`), and Admin's "PTO History" tab (incl. the stale accrual summary). Kept: the `pto_requests` table and its data (5.7), and the Attendance tab. Going forward employees enter PTO hours on their timesheet against a PTO charge code — Daniel to get the code and add it in Admin → Projects, then assign it to each employee in Admin → Team; logging those hours also stops that day's reminder email. Daniel's unpushed local branch `feature/pto-calendar-invites` (calendar invites on PTO approval) is now moot and shouldn't be merged. Verified with `CI=true react-scripts build` (clean).
 
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.
