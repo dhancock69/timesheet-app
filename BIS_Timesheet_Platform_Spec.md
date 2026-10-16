@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.14  
-**Date:** September 30, 2026  
+**Version:** 1.15  
+**Date:** October 16, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -319,6 +319,20 @@ grant select, insert, update, delete on public.new_table to service_role;
 
 No employee-facing policy — this table is manager/admin-only territory, same audience as PTO History, and isn't read anywhere in `EmployeeView`.
 
+### 6.8 Unique constraints required by auto-save (2026-10-16)
+
+Auto-save (8.3) updates rows in place with `upsert`, which needs these unique constraints. Run once in the Supabase SQL editor:
+
+```sql
+alter table public.timesheet_entries
+  add constraint timesheet_entries_ts_proj_day_key unique (timesheet_id, project_id, day_name);
+
+alter table public.daily_reports
+  add constraint daily_reports_ts_day_key unique (timesheet_id, day_name);
+```
+
+Until they exist, `writeRows()` gets Postgres error `42P10` and falls back to the old delete-then-insert path, so the app works either way — the constraints just remove the data-loss risk. If an `alter` fails with a duplicate-key error, duplicate rows already exist and must be cleaned up first.
+
 ---
 
 ## 7.0 Application Architecture
@@ -404,17 +418,18 @@ Props: `{ profile, projects, settings }`
 |---|---|
 | `loadTimesheet()` | Fetches existing timesheet + entries + reports for `viewWeekKey` (the currently viewed week, not always the current week). Fires on mount and whenever `viewWeekKey` changes. |
 | `shiftWeek(dir)` | Shifts `viewWS` by `dir*7` days; ignores forward shifts past the current week. |
-| `handleSave(submit)` | Deletes existing entries then re-inserts all current data, keyed to `viewWeekKey`/`viewWS`. Sets status to `draft` or `submitted`. |
+| `handleSave(submit)` | Saves the viewed week via `writeRows()` (upsert in place, then deletes rows the employee cleared to zero/blank). `submit=false` is the auto-save path and never changes status; `submit=true` saves then sets status `submitted`. Guards against overlapping saves (`savingRef`/`queuedRef`). |
+| `flushSave()` | Cancels the pending auto-save timer, waits for any in-flight save, then saves immediately if anything is unsaved. Called before changing weeks. |
 | `updateEntry(dayIdx, projId, field, val)` | Updates a single hour field in local state |
 | `updateDay(i, field, val)` | Updates location/notes/report for a day |
 
 **Sticky action bar (top of view):**
 - Row 1: Employee name, ‹ week range › + "This Week" jump button, emp_no, hours summary (REG/OT/DT/Total), saved/submitted badge
-- Row 2: Request Time Off · Reminders · 💾 Save Draft · Submit ✓
+- Row 2: Request Time Off · Reminders · Submit ✓ (Save Draft button removed 2026-10-16 — replaced by auto-save)
 
 **Day cards:** One per day (Mon–Sun). Contains location selector, project/hour grid, notes field, daily report field. Transparent background (`rgba(6,4,4,0.22)`) to show BIM background images.
 
-**Save behavior:** Delete-then-insert pattern (avoids `onConflict` constraint requirement). Reloads timesheet from Supabase after save to confirm persistence.
+**Save behavior — auto-save (2026-10-16):** Every edit (`updateEntry`/`updateDay`) marks the sheet dirty; 1.5 seconds after the last keystroke the week saves in the background. It also saves immediately when switching weeks (‹ › / This Week), when the browser tab is hidden or closed, and when the employee leaves the timesheet view (Manager/Admin tabs). The header shows **Saving…** → **✓ All changes saved**, or **⚠ Not saved — retrying** (auto-retries every 5 s); the browser warns before closing if a save is still pending. Submitted/approved weeks are locked and never auto-save. Rows are written with `upsert` on the unique keys in 6.8 instead of the old delete-then-insert, so a dropped connection mid-save can't wipe a week; rows cleared to 0 hours / blank text are deleted afterward. A brand-new week's `timesheets` row is created with `ignoreDuplicates`, so auto-save never overwrites an existing row's status. Note: hours on a project that is later unassigned from the employee are now kept rather than silently deleted on the next save.
 
 ---
 
@@ -656,7 +671,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of September 23, 2026)
+## 16.0 Current Status (as of October 16, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -702,6 +717,8 @@ A shared demonstration account is maintained for upper management presentations 
 - **Friday reminder moved to 9:00 AM (2026-09-23):** `vercel.json` Friday cron changed `0 15 * * 5` → `0 14 * * 5` (9:00 AM CDT) to offset the ~1 hour delivery delay Daniel observed. Mon–Thu unchanged. See 5.10.
 - **Attendance tracker built, Admin tab only (2026-09-30):** New `attendance_incidents` table (5.11) + RLS policy (6.7) for manager-logged absences/tardies, distinct from the existing `pto_requests` (a request made in advance) since this is a record made after the fact by a manager. New "🚫 Attendance" tab in `AdminConsole` (8.6, `src/App.js`) between PTO History and Settings: a 90-day per-employee summary (absence/tardy/no-call counts), a log-new-incident form, and a removable chronological log. Scoped deliberately to just the Admin tab for now — no "Log Incident" shortcut button was added to Manager Review (that was the other option discussed; see 16.3). Also cleared two harmless leftovers from the repo working tree: an empty stray file named `git` and an outdated `Claude outputs/` folder holding a stale spec copy. Confirmed via `npx react-scripts build` (compiles clean). Requires the SQL migration in the delivery message to be run in the Supabase SQL editor before the tab will load data — run same day, confirmed via direct Supabase REST calls. **Follow-up fix (2026-09-30):** after the migration ran, inserts worked but the tab's summary cards and incident log stayed empty — `loadAttendance()`'s `select("*,profiles(name)")` hit Supabase's ambiguous-embedding error (`PGRST201`, HTTP 300) because `attendance_incidents` has two FKs to `profiles` (`employee_id` and `logged_by`), and the original query wasn't checking for the error, so it silently left the list empty while inserts kept succeeding underneath (5 real test rows were already sitting in the table, confirmed via a raw SQL `select *`). Fixed by naming the specific constraint — `profiles!attendance_incidents_employee_id_fkey(name)` — and added error handling so a future load failure shows as a flash message instead of silently no-op'ing. Verified directly against the live REST API (was 300/`PGRST201`, now 200) before rebuilding.
 - **Attendance reporting added (2026-09-30):** Daniel asked for reporting on the Attendance tab right after the fix above went live. Added a date-range + employee filter that drives the existing summary cards (replacing the hardcoded 90-day cutoff), an Excel export (`BIS_VDC_Attendance_{from}_to_{to}.xlsx`, reusing the existing `downloadWorkbook()`/ExcelJS pattern from 8.5), and a printable per-employee summary (hidden `#attendance-print-area` + `@media print` CSS, `window.print()`) for handing off a single employee's record. Admin Console-only, no employee-facing view — see 8.6.
+
+- **Auto-save replaced the Save Draft button (2026-10-16):** Daniel asked for auto-save instead of the manual button. `EmployeeView` now saves ~1.5 s after the last edit, on week change, on tab hide/close, and when leaving the view, with a Saving… / ✓ All changes saved / ⚠ Not saved — retrying header badge. The save path was rewritten from delete-then-insert to upsert-in-place (`writeRows()`), because auto-save runs the save dozens of times a day and a connection drop between the delete and insert would have wiped the week. Requires the two unique constraints in 6.8; until they're added the code falls back to the old path. Also fixed the Reminders panel text (still said Fri 10:00 AM; now 9:00 AM per the 2026-09-23 change). Built in a separate worktree from `origin/main` so Daniel's unpushed local `feature/pto-calendar-invites` branch was left untouched. Verified with `CI=true react-scripts build` (clean); not yet exercised live against Supabase.
 
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.

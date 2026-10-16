@@ -357,7 +357,10 @@ function EmployeeView({profile,projects,settings}) {
   const [viewWS,setViewWS]=useState(WS);
   const [days,setDays]=useState(()=>DAYS.map((n,i)=>({name:n,date:dateOfDay(WS,i),entries:{},notes:"",report:"",location:""})));
   const [submitted,setSubmitted]=useState(false);
-  const [savedMsg,setSavedMsg]=useState(false);
+  const [saveState,setSaveState]=useState("idle"); // idle | dirty | saving | saved | error
+  // Auto-save plumbing: refs so timers/listeners always see the latest values
+  const dirtyRef=useRef(false), savingRef=useRef(false), queuedRef=useRef(false);
+  const timerRef=useRef(null), saveFnRef=useRef(null);
   const [loading,setLoading]=useState(true);
   const [timesheetId,setTimesheetId]=useState(null);
   const [rejectionNote,setRejectionNote]=useState("");
@@ -373,15 +376,16 @@ function EmployeeView({profile,projects,settings}) {
   const viewWeekLabel=weekLabel(viewWS);
   const isCurrentWeek=viewWeekKey===WEEK_KEY;
 
-  const shiftWeek=(dir)=>{
+  const shiftWeek=async(dir)=>{
     const d=new Date(viewWS); d.setDate(d.getDate()+(dir*7));
     if(dir>0&&d>WS) return; // don't let employees fill out future weeks
+    await flushSave();
     setViewWS(d);
   };
 
   useEffect(()=>{
     setDays(DAYS.map((n,i)=>({name:n,date:dateOfDay(viewWS,i),entries:{},notes:"",report:"",location:""})));
-    setTimesheetId(null); setSubmitted(false); setRejectionNote(""); setSavedMsg(false);
+    setTimesheetId(null); setSubmitted(false); setRejectionNote(""); setSaveState("idle"); dirtyRef.current=false;
     loadTimesheet();
   },[viewWeekKey]);
   useEffect(()=>{ loadMyPTO(); },[]);
@@ -412,48 +416,126 @@ function EmployeeView({profile,projects,settings}) {
 
   const updateEntry=(dayIdx,projId,field,val)=>{
     setDays(p=>p.map((d,i)=>i===dayIdx?{...d,entries:{...d.entries,[projId]:{...(d.entries[projId]||{}), [field]:val}}}:d));
-    setSavedMsg(false);
+    markDirty();
   };
-  const updateDay=(i,field,val)=>{setDays(p=>p.map((d,idx)=>idx===i?{...d,[field]:val}:d));setSavedMsg(false);};
+  const updateDay=(i,field,val)=>{setDays(p=>p.map((d,idx)=>idx===i?{...d,[field]:val}:d));markDirty();};
 
   const grandReg=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.reg)||0),0),0);
   const grandOT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.ot)||0),0),0);
   const grandDT=days.reduce((s,d)=>s+empProjects.reduce((ss,p)=>ss+(parseFloat(d.entries[p.id]?.dt)||0),0),0);
   const grandTotal=grandReg+grandOT+grandDT;
-  const handleSave=async(submit=false)=>{
-    setSaving(true);
-    const weekEnd=new Date(viewWS); weekEnd.setDate(weekEnd.getDate()+6);
-    let tsId=timesheetId;
-    if(!tsId){
-      const {data:ts,error:e}=await supabase.from("timesheets").upsert({
-        employee_id:profile.id, week_start:viewWeekKey,
-        week_end:toDateStr(weekEnd), status:submit?"submitted":"draft",
-        submitted_at:submit?new Date().toISOString():null
-      },{onConflict:"employee_id,week_start"}).select().single();
-      if(e){alert("Save error: "+e.message);return;}
-      tsId=ts.id; setTimesheetId(tsId);
-    } else if(submit){
-      await supabase.from("timesheets").update({status:"submitted",submitted_at:new Date().toISOString(),rejection_note:null}).eq("id",tsId);
-    }
-    // Save entries — delete existing then re-insert to avoid constraint issues
-    await supabase.from("timesheet_entries").delete().eq("timesheet_id",tsId);
-    await supabase.from("daily_reports").delete().eq("timesheet_id",tsId);
-    const entryRows=[];
-    const reportRows=[];
-    for(const day of days){
-      for(const proj of empProjects){
-        const entry=day.entries[proj.id]||{};
-        const reg=parseFloat(entry.reg)||0, ot=parseFloat(entry.ot)||0, dt=parseFloat(entry.dt)||0;
-        if(reg||ot||dt) entryRows.push({timesheet_id:tsId,project_id:proj.id,day_name:day.name,reg_hours:reg,ot_hours:ot,dt_hours:dt});
-      }
-      if(day.notes||day.report||day.location) reportRows.push({timesheet_id:tsId,day_name:day.name,report_text:day.report,notes:day.notes,location:day.location});
-    }
-    if(entryRows.length) await supabase.from("timesheet_entries").insert(entryRows);
-    if(reportRows.length) await supabase.from("daily_reports").insert(reportRows);
-    setSaving(false);
-    setSavedMsg(true);
-    if(submit){ setSubmitted(true); setRejectionNote(""); }
+  const markDirty=()=>{ dirtyRef.current=true; setSaveState("dirty"); };
+  const waitIdle=async()=>{ while(savingRef.current) await new Promise(r=>setTimeout(r,100)); };
+  const flushSave=async()=>{
+    clearTimeout(timerRef.current);
+    await waitIdle();
+    if(dirtyRef.current) await saveFnRef.current(false);
   };
+
+  // Writes entries/reports by updating rows in place (upsert) instead of delete-then-insert,
+  // so a dropped connection mid-save can never wipe a week. Needs the unique constraints
+  // (timesheet_id,project_id,day_name) and (timesheet_id,day_name) — see spec 6.8. If they
+  // don't exist yet (Postgres 42P10), falls back to the old delete/insert path.
+  const writeRows=async(tsId,entryRows,reportRows)=>{
+    let legacy=false;
+    if(entryRows.length){
+      const {error}=await supabase.from("timesheet_entries").upsert(entryRows,{onConflict:"timesheet_id,project_id,day_name"});
+      if(error){ if(error.code==="42P10") legacy=true; else throw error; }
+    }
+    if(!legacy){
+      const {error}=await supabase.from("daily_reports").upsert(reportRows,{onConflict:"timesheet_id,day_name"});
+      if(error){ if(error.code==="42P10") legacy=true; else throw error; }
+    }
+    if(legacy){
+      const e1=(await supabase.from("timesheet_entries").delete().eq("timesheet_id",tsId)).error; if(e1) throw e1;
+      const e2=(await supabase.from("daily_reports").delete().eq("timesheet_id",tsId)).error; if(e2) throw e2;
+      const ents=entryRows.filter(r=>r.reg_hours||r.ot_hours||r.dt_hours);
+      const reps=reportRows.filter(r=>r.notes||r.report_text||r.location);
+      if(ents.length){ const {error}=await supabase.from("timesheet_entries").insert(ents); if(error) throw error; }
+      if(reps.length){ const {error}=await supabase.from("daily_reports").insert(reps); if(error) throw error; }
+      return;
+    }
+    // Clean up rows the employee has cleared out
+    const e3=(await supabase.from("timesheet_entries").delete().eq("timesheet_id",tsId).eq("reg_hours",0).eq("ot_hours",0).eq("dt_hours",0)).error; if(e3) throw e3;
+    const e4=(await supabase.from("daily_reports").delete().eq("timesheet_id",tsId).eq("notes","").eq("report_text","").eq("location","")).error; if(e4) throw e4;
+  };
+
+  const handleSave=async(submit=false)=>{
+    if(!submit&&submitted) return true;
+    if(savingRef.current){
+      if(!submit){ queuedRef.current=true; return true; }
+      await waitIdle();
+    }
+    clearTimeout(timerRef.current);
+    savingRef.current=true; dirtyRef.current=false;
+    setSaving(true); setSaveState("saving");
+    try{
+      const weekEnd=new Date(viewWS); weekEnd.setDate(weekEnd.getDate()+6);
+      let tsId=timesheetId;
+      if(!tsId){
+        // Create the week's draft row if it doesn't exist; never overwrite an existing row's status
+        const {error:insErr}=await supabase.from("timesheets").upsert({
+          employee_id:profile.id, week_start:viewWeekKey,
+          week_end:toDateStr(weekEnd), status:"draft", submitted_at:null
+        },{onConflict:"employee_id,week_start",ignoreDuplicates:true});
+        if(insErr) throw insErr;
+        const {data:ts,error:selErr}=await supabase.from("timesheets").select("id,status").eq("employee_id",profile.id).eq("week_start",viewWeekKey).single();
+        if(selErr) throw selErr;
+        tsId=ts.id; setTimesheetId(tsId);
+        if(!submit&&(ts.status==="submitted"||ts.status==="approved")){ setSubmitted(true); setSaveState("idle"); return true; }
+      }
+      const entryRows=[];
+      const reportRows=[];
+      for(const day of days){
+        for(const proj of empProjects){
+          const entry=day.entries[proj.id];
+          if(!entry) continue;
+          const reg=parseFloat(entry.reg)||0, ot=parseFloat(entry.ot)||0, dt=parseFloat(entry.dt)||0;
+          entryRows.push({timesheet_id:tsId,project_id:proj.id,day_name:day.name,reg_hours:reg,ot_hours:ot,dt_hours:dt});
+        }
+        reportRows.push({timesheet_id:tsId,day_name:day.name,report_text:day.report||"",notes:day.notes||"",location:day.location||""});
+      }
+      await writeRows(tsId,entryRows,reportRows);
+      if(submit){
+        const {error}=await supabase.from("timesheets").update({status:"submitted",submitted_at:new Date().toISOString(),rejection_note:null}).eq("id",tsId);
+        if(error) throw error;
+        setSubmitted(true); setRejectionNote("");
+      }
+      setSaveState(dirtyRef.current?"dirty":"saved");
+      return true;
+    }catch(err){
+      dirtyRef.current=true;
+      setSaveState("error");
+      if(submit) alert("Submit failed: "+(err?.message||err)+"\nYour entries are still on screen — please try Submit again.");
+      else timerRef.current=setTimeout(()=>saveFnRef.current(false),5000); // retry
+      return false;
+    }finally{
+      savingRef.current=false; setSaving(false);
+      if(queuedRef.current){ queuedRef.current=false; if(dirtyRef.current) saveFnRef.current(false); }
+    }
+  };
+  saveFnRef.current=handleSave;
+
+  // Auto-save ~1.5s after the last edit
+  useEffect(()=>{
+    if(!dirtyRef.current||submitted||loading) return;
+    clearTimeout(timerRef.current);
+    timerRef.current=setTimeout(()=>saveFnRef.current(false),1500);
+  },[days]);
+
+  // Save immediately when the tab is hidden/closed or the view is left; warn if a save is still pending
+  useEffect(()=>{
+    const flushNow=()=>{ clearTimeout(timerRef.current); if(dirtyRef.current&&!savingRef.current) saveFnRef.current(false); };
+    const onVis=()=>{ if(document.visibilityState==="hidden") flushNow(); };
+    const onBeforeUnload=(e)=>{ if(dirtyRef.current||savingRef.current){ flushNow(); e.preventDefault(); e.returnValue=""; } };
+    document.addEventListener("visibilitychange",onVis);
+    window.addEventListener("beforeunload",onBeforeUnload);
+    return ()=>{
+      document.removeEventListener("visibilitychange",onVis);
+      window.removeEventListener("beforeunload",onBeforeUnload);
+      flushNow(); // switching to Manager/Admin view unmounts this component
+    };
+  },[]);
 
   const timeOptions=[];
   for(let h=7;h<=19;h++) ["00","30"].forEach(m=>{ const v=`${String(h).padStart(2,"0")}:${m}`; if(v!=="13:00") timeOptions.push(v); });
@@ -473,7 +555,7 @@ function EmployeeView({profile,projects,settings}) {
               <button onClick={()=>shiftWeek(-1)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.muted,cursor:"pointer",padding:"1px 8px",fontSize:14,lineHeight:1}}>‹</button>
               <span style={{color:C.muted,fontSize:12}}>{viewWeekLabel}</span>
               <button onClick={()=>shiftWeek(1)} disabled={isCurrentWeek} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:isCurrentWeek?C.border:C.muted,cursor:isCurrentWeek?"default":"pointer",padding:"1px 8px",fontSize:14,lineHeight:1}}>›</button>
-              {!isCurrentWeek&&<button onClick={()=>setViewWS(WS)} style={{background:"none",border:`1px solid ${C.accent}`,borderRadius:6,color:C.accent,cursor:"pointer",padding:"1px 8px",fontSize:10,fontWeight:700}}>This Week</button>}
+              {!isCurrentWeek&&<button onClick={async()=>{await flushSave();setViewWS(WS);}} style={{background:"none",border:`1px solid ${C.accent}`,borderRadius:6,color:C.accent,cursor:"pointer",padding:"1px 8px",fontSize:10,fontWeight:700}}>This Week</button>}
               <span style={{color:C.gold,fontSize:12}}>· #{profile.emp_no||"No Emp# yet"}</span>
             </div>
           </div>
@@ -481,7 +563,12 @@ function EmployeeView({profile,projects,settings}) {
             <div style={{background:C.accentDim,borderRadius:8,padding:"6px 12px",fontWeight:800,fontSize:12,color:C.accent,border:`1px solid ${C.accent}33`}}>
               REG {grandReg.toFixed(1)} · OT {grandOT.toFixed(1)} · DT {grandDT.toFixed(1)} · <span style={{color:C.green}}>Total {grandTotal.toFixed(1)}</span>
             </div>
-            {submitted?<Badge color="green">✓ Submitted</Badge>:rejectionNote?<Badge color="red">✗ Rejected</Badge>:savedMsg?<Badge color="amber">✓ Saved</Badge>:null}
+            {submitted?<Badge color="green">✓ Submitted</Badge>:<>
+              {rejectionNote&&<Badge color="red">✗ Rejected</Badge>}
+              {(saveState==="dirty"||saveState==="saving")&&<Badge color="amber">Saving…</Badge>}
+              {saveState==="saved"&&<Badge color="green">✓ All changes saved</Badge>}
+              {saveState==="error"&&<Badge color="red">⚠ Not saved — retrying</Badge>}
+            </>}
           </div>
         </div>
         {/* Row 2: Action buttons */}
@@ -489,8 +576,7 @@ function EmployeeView({profile,projects,settings}) {
           <Btn variant="ghost" small onClick={()=>setShowPTO(true)}>📅 Request Time Off</Btn>
           <Btn variant="ghost" small onClick={()=>setShowReminderPanel(r=>!r)}>🔔 Reminders</Btn>
           {!submitted&&<>
-            <Btn variant="gold" small onClick={()=>handleSave(false)} disabled={saving}>{saving?"Saving…":"💾 Save Draft"}</Btn>
-            <Btn variant="primary" small onClick={()=>handleSave(true)} disabled={grandTotal===0}>Submit ✓</Btn>
+            <Btn variant="primary" small onClick={()=>handleSave(true)} disabled={grandTotal===0||saving}>Submit ✓</Btn>
           </>}
         </div>
       </div>
@@ -507,7 +593,7 @@ function EmployeeView({profile,projects,settings}) {
         <Card style={{padding:18,marginBottom:20}}>
           <div style={{fontWeight:800,color:C.text,fontSize:14,marginBottom:14}}>🔔 Reminder Settings</div>
           <div style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
-            <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Mon–Thu at 12:30 PM · Fri at 10:00 AM</div></div>
+            <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Mon–Thu at 12:30 PM · Fri at 9:00 AM</div></div>
             <Badge color="green">Always On</Badge>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
