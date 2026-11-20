@@ -1,0 +1,56 @@
+# Daily timesheet reminder — daylight-saving-proof scheduler.
+#
+# GitHub Actions cron runs in UTC only, so each reminder is scheduled twice: once at the
+# right UTC time for CST (winter) and once for CDT (summer). The first step checks which
+# one Chicago is actually on today and skips the other, so the reminder always fires at
+# the same local time year-round — no edits at DST changes.
+#
+# Targets (America/Chicago): Mon–Thu fire 1:15 PM, Fri fire 10:15 AM (GitHub usually runs
+# scheduled jobs a few minutes late, so emails should land ~1:30 PM / ~10:30 AM).
+#
+# The vercel.json crons are kept as a later BACKUP only: the endpoint's same-day dedup
+# (reminder_last_sent_date) makes them a no-op whenever this workflow already sent.
+#
+# Requires repo secret CRON_SECRET (same value as the Vercel env var). See spec 5.10.
+
+name: Daily timesheet reminder
+
+on:
+  schedule:
+    - cron: "15 19 * * 1-4"   # Mon–Thu 1:15 PM CST
+    - cron: "15 18 * * 1-4"   # Mon–Thu 1:15 PM CDT
+    - cron: "15 16 * * 5"     # Fri 10:15 AM CST
+    - cron: "15 15 * * 5"     # Fri 10:15 AM CDT
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (list who would be emailed, send nothing)"
+        type: boolean
+        default: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send reminder (only for the schedule matching Chicago's current offset)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SCHEDULE: ${{ github.event.schedule }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          zone=$(TZ=America/Chicago date +%Z)
+          case "$SCHEDULE" in
+            "15 19 * * 1-4"|"15 16 * * 5") want=CST ;;
+            "15 18 * * 1-4"|"15 15 * * 5") want=CDT ;;
+            *) want="$zone" ;;   # manual run
+          esac
+          echo "Chicago is on $zone; this run is the $want schedule ($SCHEDULE)"
+          if [ "$want" != "$zone" ]; then
+            echo "Not today's schedule — skipping."
+            exit 0
+          fi
+          url="https://timesheet-app-snowy.vercel.app/api/daily-reminder"
+          if [ "$DRY_RUN" = "true" ]; then url="$url?dryRun=1"; fi
+          curl -fsS --max-time 60 -H "Authorization: Bearer $CRON_SECRET" "$url"
+          echo

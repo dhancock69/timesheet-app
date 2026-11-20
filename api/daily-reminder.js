@@ -1,17 +1,13 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-// vercel.json fires exactly one cron per weekday group per day, each at a fixed UTC time —
-// no DST auto-adjustment (Vercel Hobby's 2-cron-job cap doesn't leave room for CDT/CST
-// offset pairing):
-//   - Mon-Thu: 30 17 * * 1-4  (targets 12:30 PM America/Chicago while CDT is in effect)
-//   - Fri:     0 15 * * 5     (targets 10:00 AM America/Chicago while CDT is in effect)
-// Since there's only ever one trigger per weekday per day, there's no "wrong" entry to
-// filter out — this function has no time-of-day gate, it just sends whenever that single
-// cron fires (subject to the same-day dedup check below). That means for the ~1 week
-// around each DST transition, until vercel.json's UTC hours are manually adjusted by 1
-// hour (see spec 5.10), the reminder goes out an hour early or late — never silently
-// skipped, which is the point: a stale schedule degrades gracefully instead of failing.
+// Triggered by two schedulers (see spec 5.10):
+//   1. PRIMARY: .github/workflows/daily-reminder.yml — GitHub Actions, scheduled for both
+//      CST and CDT and self-selecting by Chicago's current offset, so it fires at the same
+//      local time year-round (Mon-Thu ~1:15 PM, Fri ~10:15 AM) with no DST edits.
+//   2. BACKUP: vercel.json crons at fixed UTC times ~1-2 hours later. Normally a no-op,
+//      because the same-day dedup check below sees the primary already sent.
+// No time-of-day gate here: whichever trigger arrives first sends (once per day).
 
 function chicagoNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
