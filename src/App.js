@@ -528,7 +528,7 @@ function EmployeeView({profile,projects,settings}) {
         <Card style={{padding:18,marginBottom:20}}>
           <div style={{fontWeight:800,color:C.text,fontSize:14,marginBottom:14}}>🔔 Reminder Settings</div>
           <div style={{background:"rgba(8,4,4,0.88)",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
-            <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Mon–Thu at 12:30 PM · Fri at 9:00 AM</div></div>
+            <div><div style={{fontWeight:700,color:C.text,fontSize:13}}>Default Reminder</div><div style={{color:C.muted,fontSize:12}}>Mon–Thu at 1:30 PM · Fri at 10:30 AM</div></div>
             <Badge color="green">Always On</Badge>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>

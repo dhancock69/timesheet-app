@@ -3,7 +3,7 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "crons": [
-    { "path": "/api/daily-reminder", "schedule": "30 17 * * 1-4" },
-    { "path": "/api/daily-reminder", "schedule": "0 14 * * 5" }
+    { "path": "/api/daily-reminder", "schedule": "50 18 * * 1-4" },
+    { "path": "/api/daily-reminder", "schedule": "50 15 * * 5" }
   ]
 }

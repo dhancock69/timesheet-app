@@ -1,8 +1,8 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.16  
-**Date:** October 16, 2026  
+**Version:** 1.17  
+**Date:** November 20, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
 
@@ -206,15 +206,15 @@ Each employee's `timesheet_file_location` (profiles column, admin-editable) is t
 
 A Vercel Cron job (`vercel.json` → `crons`) hits `/api/daily-reminder`, weekdays only, once per weekday group (see schedule below). The function has **no time-of-day gate** — it checks weekday (skip weekends) and whether a reminder already went out today (`reminder_last_sent_date` app_settings key, dedup), then sends immediately if not. This is intentional (2026-09-21, corrected same-day per Daniel): an earlier version gated on a target local time, which meant a stale (un-DST-adjusted) schedule could land *before* the target and be silently skipped with no retry that day. With exactly one cron fire per weekday group per day, there's no second entry to arbitrate between, so the gate served no purpose except creating that failure mode — removed. Now a stale schedule just sends an hour early or late, never silently fails.
 
-**Per-weekday targets (2026-09-21, Friday revised 2026-09-23):** Mon–Thu target 12:30 PM America/Chicago; Friday targets 9:00 AM (payroll needs Friday's earlier). Friday was moved from 10:00 AM to 9:00 AM on 2026-09-23 because Daniel observed ~1 hour of delivery delay on these reminders (Vercel Hobby crons can fire anywhere within the scheduled hour), so a 9:00 schedule lands around 10:00. Previously all weekdays shared a single 1:30 PM target, but the effective send time had drifted to ~2:18 PM in practice (Vercel Hobby cron execution isn't guaranteed to the minute) and Friday had never actually been distinguished from the rest of the week — both corrected here at Daniel's request. These "targets" are now just the intent baked into the cron schedule's UTC values (see below), not an in-code gate.
+**Per-weekday targets (revised 2026-11-20):** reminders should *arrive* Mon–Thu ~1:30 PM and Friday ~10:30 AM America/Chicago. Observed delivery lag is ~40 min after the scheduled cron time (Nov 2026: `30 17` arrived 12:12 PM CST, `0 14` arrived 8:39 AM CST), so the crons are set ~40 min early. History: originally 1:30 PM all weekdays; 2026-09-21 Mon–Thu 12:30 / Fri 10:00; 2026-09-23 Fri 9:00; 2026-11-20 Mon–Thu 1:30 / Fri 10:30 arrival targets.
 
 **Cron schedule (2026-09-21):** `vercel.json` has **2** entries — one fixed UTC time per weekday group, no DST auto-adjustment (Hobby's 2-cron-job cap can't fit both a weekday split and DST offset pairing):
-- Mon–Thu (12:30 PM target): `30 17 * * 1-4`
-- Friday (9:00 AM target): `0 14 * * 5`
+- Mon–Thu (fires 12:50 PM CST → arrives ~1:30 PM): `50 18 * * 1-4`
+- Friday (fires 9:50 AM CST → arrives ~10:30 AM): `50 15 * * 5`
 
-These UTC hours are correct for **CDT** (current DST state as of 2026-09-21). Also supports a `?dryRun=1` query param (still requires the `CRON_SECRET` bearer auth) that computes and returns the would-be recipient list without sending anything or touching the gates/dedup flag — safe to run anytime against real data to sanity-check the filtering logic.
+These UTC hours are correct for **CST** (in effect since 2026-11-01). Also supports a `?dryRun=1` query param (still requires the `CRON_SECRET` bearer auth) that computes and returns the would-be recipient list without sending anything or touching the gates/dedup flag — safe to run anytime against real data to sanity-check the filtering logic.
 
-**⚠ Manual DST maintenance (cosmetic, not functional):** with only 2 cron entries there's no CDT/CST offset pairing, so `vercel.json`'s UTC hours drift 1 hour off-target for the ~4-5 months either side of each DST transition unless hand-edited. Since the time-of-day gate was removed, this no longer breaks sending — reminders still go out every weekday, just an hour earlier or later than intended until corrected. **Next transition: Sunday, November 1, 2026** (CDT→CST) — add 1 hour to both UTC schedule values (`30 18 * * 1-4` and `0 15 * * 5`) to keep hitting 12:30 PM/9:00 AM exactly. If the edit is missed, reminders go out 1 hour **early** (fixed UTC time, clocks fall back) until corrected — nothing breaks. A scheduled Claude task (fires 2026-10-30, 11:00 AM CT) is set to make this edit and push it. Then subtract 1 hour again at the following spring-forward (CST→CDT, second Sunday of March 2027). Purely a "keep it precisely on time" chore now, not a reliability risk.
+**⚠ Manual DST maintenance (cosmetic, not functional):** with only 2 cron entries (Vercel Hobby cap, once-daily each) there's no CDT/CST offset pairing, so the UTC hours drift 1 hour at each DST change unless hand-edited. **Next transition: Sunday, March 14, 2027** (CST→CDT) — subtract 1 hour from both (`50 17 * * 1-4` and `50 14 * * 5`), otherwise reminders arrive an hour late until fixed. Then add it back at the November 2027 fall-back. Note: the 2026-10-30 scheduled Claude task meant to make the November change failed (access denied) and the edit was missed until Daniel noticed on 2026-11-20 — don't rely on that mechanism; a DST-proof alternative is an external scheduler that supports America/Chicago time (e.g. a GitHub Actions workflow calling the endpoint with `CRON_SECRET`).
 
 **Eligibility (who gets emailed):** every `profiles` row with an email, for the current weekday, *excluding* anyone whose timesheet for the current week is already `submitted`/`approved`, who already logged hours (`timesheet_entries` for today's `day_name` with reg/ot/dt > 0), or who has an `approved` `pto_requests` row covering today. Note: there's no employment-status field on `profiles`, so a terminated employee's row would still get reminders unless removed.
 
@@ -667,7 +667,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 ---
 
-## 16.0 Current Status (as of October 16, 2026)
+## 16.0 Current Status (as of November 20, 2026)
 
 ### 16.1 Shipped / In Production
 
@@ -718,6 +718,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 - **PTO removed from the app (2026-10-16):** Daniel noted PTO is requested, approved and tracked in isolved, so the app's PTO features were double entry (and a test request he'd rejected was stuck at the top of his timesheet with no way to clear it). Removed: employee "📅 Request Time Off" button + `PTOModal`, the "My Time Off Requests" card, Manager Review's "Pending Time Off Requests" section (`handlePTO`), and Admin's "PTO History" tab (incl. the stale accrual summary). Kept: the `pto_requests` table and its data (5.7), and the Attendance tab. Going forward employees enter PTO hours on their timesheet against a PTO charge code — Daniel to get the code and add it in Admin → Projects, then assign it to each employee in Admin → Team; logging those hours also stops that day's reminder email. Daniel's unpushed local branch `feature/pto-calendar-invites` (calendar invites on PTO approval) is now moot and shouldn't be merged. Verified with `CI=true react-scripts build` (clean).
 
+- **Reminder times reset (2026-11-20):** The scheduled DST update for Nov 1 failed, so since the switch to CST reminders were arriving Mon–Thu ~12:12 PM and Fri ~8:39 AM. Per Daniel, retargeted to arrive Mon–Thu ~1:30 PM and Fri ~10:30 AM: crons now `50 18 * * 1-4` / `50 15 * * 5` (set ~40 min early for the observed delivery lag). Reminders panel text updated to match. Also noted: the repo now lives at `D:\Dev\timesheet-app` (was `D:\Projects\timesheet-app`). See 5.10.
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.
 - **Confirmed on Vercel Hobby plan (2026-09-11)**, per the dashboard plan badge. Hobby caps a project at 2 cron jobs total and doesn't allow sub-daily/exact-minute schedules per job. As of 2026-09-21 the daily-reminder's 2-entry schedule (see 5.10) fits this cap and has no DST auto-adjustment or time-of-day gate — `vercel.json`'s UTC hours should be hand-edited by 1 hour at each DST transition (**next: Sunday, November 1, 2026**) to keep send times exactly on target, but forgetting only shifts the send time by an hour, it no longer stops the reminder from sending.
