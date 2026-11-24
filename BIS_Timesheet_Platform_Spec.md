@@ -1,7 +1,7 @@
 # BeardONE Timesheet Platform — Technical Specification
 
 **Document:** BIS-VDC-SPEC-001  
-**Version:** 1.18  
+**Version:** 1.19  
 **Date:** November 20, 2026  
 **Prepared By:** Daniel Hancock — VDC/BIM Manager, Beard Integrated Systems  
 **Status:** Production
@@ -216,7 +216,7 @@ The endpoint also supports a `?dryRun=1` query param (still requires the `CRON_S
 
 **DST maintenance: none required as of 2026-11-20.** Previously the two fixed-UTC Vercel crons had to be hand-edited at every DST change; the 2026-10-30 scheduled Claude task meant to make the November 2026 edit failed (access denied), so reminders ran an hour early from Nov 1 until Daniel noticed on Nov 20. That is what prompted moving the primary trigger to the self-adjusting GitHub Actions workflow above.
 
-**Eligibility (who gets emailed):** every `profiles` row with an email, for the current weekday, *excluding* anyone whose timesheet for the current week is already `submitted`/`approved`, who already logged hours (`timesheet_entries` for today's `day_name` with reg/ot/dt > 0), or who has an `approved` `pto_requests` row covering today. Note: there's no employment-status field on `profiles`, so a terminated employee's row would still get reminders unless removed.
+**Eligibility (who gets emailed):** every `profiles` row with an email, for the current weekday, *excluding* anyone whose timesheet for the current week is already `submitted`/`approved`, who already logged hours (`timesheet_entries` for today's `day_name` with reg/ot/dt > 0), or who has an `approved` `pto_requests` row covering today. The demo account (`demo@beardint.com`) is also excluded, via the `NO_REMINDER_EMAILS` list at the top of `api/daily-reminder.js` (added 2026-11-24) — add any other shared/non-person login there. Note: there's no employment-status field on `profiles`, so a terminated employee's row would still get reminders unless removed.
 
 **Required env vars (Vercel → Settings → Environment Variables, server-side only):**
 - `SUPABASE_SERVICE_ROLE_KEY` — bypasses RLS so the function can read across all employees (reuses `REACT_APP_SUPABASE_URL` for the project URL)
@@ -720,6 +720,7 @@ A shared demonstration account is maintained for upper management presentations 
 
 - **Reminder times reset (2026-11-20):** The scheduled DST update for Nov 1 failed, so since the switch to CST reminders were arriving Mon–Thu ~12:12 PM and Fri ~8:39 AM. Per Daniel, retargeted to arrive Mon–Thu ~1:30 PM and Fri ~10:30 AM: crons now `50 18 * * 1-4` / `50 15 * * 5` (set ~40 min early for the observed delivery lag). Reminders panel text updated to match. Also noted: the repo now lives at `D:\Dev\timesheet-app` (was `D:\Projects\timesheet-app`). See 5.10.
 - **Reminders made daylight-saving-proof (2026-11-20):** Added `.github/workflows/daily-reminder.yml` as the primary reminder trigger — scheduled for both CST and CDT, self-selecting by Chicago's current offset — so reminders fire Mon–Thu ~1:15 PM / Fri ~10:15 AM Central year-round with no manual DST edits. `vercel.json` crons moved ~1 hour later (`30 20 * * 1-4`, `30 17 * * 5`) as a backup that dedups to a no-op when the primary already sent. Needs repo secret `CRON_SECRET` (Daniel adds once in GitHub → Settings → Secrets and variables → Actions). Endpoint code unchanged apart from its header comment. Selection logic verified by simulating CST and CDT dates. See 5.10.
+- **Demo account excluded from reminders (2026-11-24):** the first GitHub Actions dry run showed `demo@beardint.com` on the reminder list; per Daniel it's now skipped via `NO_REMINDER_EMAILS` in `api/daily-reminder.js`. Also that day: Claude Code rotated `CRON_SECRET` (new value set in Vercel Production + Preview and as the GitHub Actions secret, production redeployed) because the old value was a Vercel Sensitive var that couldn't be read back, and the workflow's first scheduled run had failed with a 401. GitHub CLI (`gh`) is now installed and signed in on Daniel's laptop, so Claude Code can push and manage the repo directly.
 ### 16.2 Known Outstanding
 - **Multi-employee CC path not live-tested end-to-end** — the single-employee CC send was verified live; the multi-employee case rests on the structural guarantee that the CC'd buffer is identical to the already-verified Storage-archive buffer, not a second live send to real employee addresses (deliberately avoided during testing). Worth a real check next time multiple employees' exports are run for real.
 - **Confirmed on Vercel Hobby plan (2026-09-11)** — 2 cron jobs max, once-daily each. As of 2026-11-20 those two crons are only the backup; the primary reminder trigger is the GitHub Actions workflow (5.10), which handles DST automatically.

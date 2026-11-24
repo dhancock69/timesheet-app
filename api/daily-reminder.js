@@ -1,6 +1,8 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+// Accounts that never get reminder emails (shared/demo logins nobody fills in daily).
+const NO_REMINDER_EMAILS = ["demo@beardint.com"];
 // Triggered by two schedulers (see spec 5.10):
 //   1. PRIMARY: .github/workflows/daily-reminder.yml — GitHub Actions, scheduled for both
 //      CST and CDT and self-selecting by Chicago's current offset, so it fires at the same
@@ -94,6 +96,7 @@ module.exports = async function handler(req, res) {
 
   const toRemind = (profiles || []).filter(p => {
     if (!p.email || onPtoToday.has(p.id)) return false;
+    if (NO_REMINDER_EMAILS.includes(p.email.trim().toLowerCase())) return false;
     const ts = timesheetByEmp.get(p.id);
     if (ts && (ts.status === "submitted" || ts.status === "approved")) return false;
     if (ts && loggedTimesheetIds.has(ts.id)) return false;
